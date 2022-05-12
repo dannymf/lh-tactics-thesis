@@ -4,6 +4,7 @@
 
 module PruneAuto where
 
+import Options
 import Building
 import Control.Monad as Monad
 import Data.Char as Char
@@ -76,8 +77,8 @@ import Tactic.Core.PreSyntax
       Exp which is spliced into the program file
 -}
 
-pruneAutos :: FilePath -> String -> TacticSplice -> IO ()
-pruneAutos filePath defName tacticSplice = do
+pruneAutos :: Options -> FilePath -> String -> TacticSplice -> IO ()
+pruneAutos options filePath defName tacticSplice = do
   consoleIO $ "pruning autos in module " ++ show filePath ++ " in definition " ++ show defName
   Just str_err <- build defaultOptions_build {capture_std_err = True, checkLH = True}
   if passesLH str_err

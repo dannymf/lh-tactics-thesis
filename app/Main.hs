@@ -6,6 +6,8 @@ import Building
 import Debug
 import File
 import InlineTactic
+import Parsing
+import Options
 import PruneAuto
 import System.Environment as Environment
 import System.Process as Process
@@ -20,15 +22,30 @@ main = do
 
   args <- getArgs
   case args of
-    [filePath] -> do
-      filePath <- toGlobalFilePath filePath
-      inlineTactics filePath
-      return ()
-    [filePath, defName] -> do
-      filePath <- toGlobalFilePath filePath
-      (_, tacticSplices) <- inlineTactics filePath
-      case filter ((defName ==) . name_TS) tacticSplices of 
-        [tacticSplice] -> pruneAutos filePath defName tacticSplice
-        _ -> error "not a valid defName"
-      return ()
-    _ -> error "Wrong number of arguments. Requirese "
+    [] -> error $ "This command reqires arguments of the form <filePath>:<defName> <option*>"
+    (filePath_defName : strs_opts) -> do
+      let options = parseOptions strs_opts
+      case splitByChar ':' filePath_defName of 
+        [filePath] -> do
+          filePath <- toGlobalFilePath filePath
+          inlineTactics options filePath
+          return ()
+        [filePath, defName] -> do
+          filePath <- toGlobalFilePath filePath
+          tacticSplices <- inlineTactics options filePath
+          case filter ((defName ==) . name_TS) tacticSplices of
+            [tacticSplice] -> pruneAutos options filePath defName tacticSplice
+            _ -> error "not a valid defName"
+          return ()
+        _ -> do
+          error $ "Badly formed input: " ++ show filePath_defName ++ ". Is required to be of the form <filePath>:<defName>"
+
+parseOptions :: [String] -> Options
+parseOptions =
+  foldl
+    ( \opts str -> case str of
+        "--write-tactic-dir" -> opts {generate_tactic_dir = True}
+        "--write-tactic-encoding" -> opts {generate_tactic_encoding = True}
+        _ -> opts
+    )
+    defaultOptions

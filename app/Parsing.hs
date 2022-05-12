@@ -40,6 +40,15 @@ splitBys seps = go []
     go acc [] = if null acc then [] else [reverse acc]
     go acc (h : t) = if h `elem` seps then (if null acc then [] else [reverse acc]) ++ go [] t else go (h : acc) t
 
+splitByChar :: Char -> String -> [String]
+splitByChar sep str = go "" str
+  where
+    go "" "" = []
+    go acc "" = [acc]
+    go acc (c : str)
+      | c == sep = acc : go "" str
+      | otherwise = go (acc ++ [c]) str
+
 trimSpace :: String -> String
 trimSpace = takeWhile (not . isSpace) . dropWhile isSpace
 

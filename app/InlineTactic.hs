@@ -4,6 +4,7 @@
 
 module InlineTactic where
 
+import Options
 import Building
 import Control.Monad as Monad
 import Data.Char as Char
@@ -32,8 +33,8 @@ import System.Process as Process
 -- returns
 -- - FilePath: where new version (with inlined tacticSplices) was written to
 -- - [TacticSplice]: parsed TacticSplices
-inlineTactics :: FilePath -> IO (FilePath, [TacticSplice])
-inlineTactics filePath = do
+inlineTactics :: Options -> FilePath -> IO [TacticSplice]
+inlineTactics options filePath = do
   str_file <- readFile filePath
   consoleIO $ "inlining tactic splices in file: " ++ filePath
   let ls_file = lines str_file
@@ -76,28 +77,17 @@ inlineTactics filePath = do
 
   debugIO $ unlines $ "==================== ls'_file" : ls'_file
 
-  -- -- all version are stored in <filePath>.tactic/
-  -- let tacticFilePath = filePath ++ ".tactic/"
-  -- -- create tacticFilePath if it doesn't exist
-  -- -- system $ "if [ -d "++ tacticFilePath ++ " ]; then; else mkdir " ++ tacticFilePath ++ "; fi"
-  -- system $ "mkdir " ++ tacticFilePath
-  -- -- get the number of versions already in .tactic
-  -- n <- length . lines <$> readProcess "ls" [tacticFilePath] ""
-  -- -- new version will be at <filePath>.tactic/<n>.hs
-  -- let filePath' = tacticFilePath ++ show n ++ ".hs"
-  -- system $ "mv " ++ filePath ++ " " ++ filePath'
-  -- consoleIO $ "created cache of current version at: " ++ filePath'
-
-  -- all version are stored in <filePath>.tactic/
-  let tacticFilePath = moduleFilePath_to_tacticDir filePath
-  -- create tacticFilePath if it doesn't exist
-  mkdir tacticFilePath
-  -- get the number of versions already in .tactic
-  n <- getDirSize tacticFilePath
-  -- new version will be at <filePath>.tactic/<n>.hs
-  let filePath' = tacticFilePath ++ show n ++ ".hs"
-  mv filePath filePath'
-  consoleIO $ "created cache of current version at: " ++ filePath'
+  when (generate_tactic_dir options) $ do
+    -- all version are stored in <filePath>.tactic/
+    let tacticFilePath = moduleFilePath_to_tacticDir filePath
+    -- create tacticFilePath if it doesn't exist
+    mkdir tacticFilePath
+    -- get the number of versions already in .tactic
+    n <- getDirSize tacticFilePath
+    -- new version will be at <filePath>.tactic/<n>.hs
+    let filePath' = tacticFilePath ++ show n ++ ".hs"
+    mv filePath filePath'
+    consoleIO $ "created cache of current version at: " ++ filePath'
 
   -- write new version of file
   writeFile filePath (unlines ls'_file)
@@ -107,15 +97,16 @@ inlineTactics filePath = do
   -- write tactic encodings to file
   -- ===========================================================================
   -- each tactical def gets its own file
-  mapM_
-    ( \tacticSplice -> do
-        let tacticEncodingFilePath = moduleFilePath_to_tacticEncodingFilePath filePath (name_TS tacticSplice)
-        writeFile tacticEncodingFilePath (encoding_TS tacticSplice)
-        consoleIO $ "wrote tactic encoding in file: " ++ tacticEncodingFilePath
-    )
-    (filter ((filePath ==) . filePath_TS) tacticSplices)
+  when (generate_tactic_encoding options) $ do
+    mapM_
+      ( \tacticSplice -> do
+          let tacticEncodingFilePath = moduleFilePath_to_tacticEncodingFilePath filePath (name_TS tacticSplice)
+          writeFile tacticEncodingFilePath (encoding_TS tacticSplice)
+          consoleIO $ "wrote tactic encoding in file: " ++ tacticEncodingFilePath
+      )
+      (filter ((filePath ==) . filePath_TS) tacticSplices)
 
-  return (filePath', tacticSplices)
+  return tacticSplices
 
 data TacticSplice = TacticSplice
   { filePath_TS :: FilePath,
