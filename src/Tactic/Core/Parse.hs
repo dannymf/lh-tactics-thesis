@@ -40,8 +40,9 @@ parseInstrs = do
 parseIntros :: Parser [[String]]
 parseIntros = do
   parseSymbol "["
-  s <- parseUntilBefore (parseIsChar ']')
-  let intros = fmap (splitByChar ' ') . splitByChar '|' $ s
+  -- s <- parseUntilBefore (parseIsChar ']')
+  -- let intros = fmap (splitByChar ' ') . splitByChar '|' $ s
+  intros <- (parseNameString `P.sepBy` P.spaces) `P.sepBy` (lexeme (P.char '/'))
   parseSymbol "]"
   pure intros
 
@@ -82,13 +83,21 @@ parseInstr =
       -- Assert
       do
         parseSymbol "assert"
-        exp <- parseExp
+        exp <- lexeme parseExp
         pure [Assert {exp}],
       -- Use
       do
         parseSymbol "use"
-        exp <- parseExp
-        pure [Use {exp}],
+        exp <- lexeme parseExp
+        mb_requires <- P.optionMaybe . P.try $ do
+          parseSymbol "requires"
+          parseSymbol "["
+          requires <- parseNameString `P.sepBy` parseSymbol ","
+          parseSymbol "]"
+          pure requires
+        case mb_requires of
+          Just requires -> pure [Use {exp, requires}]
+          Nothing -> pure [Use {exp, requires = []}],
       -- Trivial
       do
         parseSymbol "trivial"
@@ -194,14 +203,6 @@ parseUntilBefore p = lexeme go
 
 lookAheadRest :: Parser String
 lookAheadRest = P.lookAhead (P.many P.anyChar)
-
-nameToExp :: Name -> Exp
-nameToExp name =
-  case nameBase name of
-    (c : s) ->
-      if Char.isLower c
-        then VarE name
-        else ConE name
 
 splitByChar :: Char -> String -> [String]
 splitByChar sep str = go "" str

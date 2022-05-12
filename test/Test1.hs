@@ -31,8 +31,11 @@ return []
 
 [tactic|
 test1 :: B -> Proof
-test1 b = induct b; auto [f]
+test1 b =
+  induct b as [pf/];
+  use {f (f pf)} requires [pf]
 |]
+
 
 main = do
   print _tactic_encoding_test1
@@ -42,3 +45,4 @@ main = do
   putStrLn ""
   let decs = splicePreDec preDec
   putStrLn $ pprint decs
+

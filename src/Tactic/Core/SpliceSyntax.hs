@@ -9,6 +9,7 @@
 
 module Tactic.Core.SpliceSyntax where
 
+import Data.Maybe
 import Control.Monad
 import Control.Monad.Trans as Trans
 import Control.Monad.Trans.State as State
@@ -143,8 +144,14 @@ spliceExp instrs =
         Nothing -> go instrs -- skip this instruction, since target not in scope
     go (Assert {exp} : instrs) =
       If exp <$> go instrs <*> pure TrivialPreExp
-    go (Use {exp} : instrs) =
-      Exp exp <$> go instrs
+    go (Use {exp, requires} : instrs) = do
+      env <- get
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      debugM $ "inScope: " ++ show inScope
+      if inScope then
+        Exp exp <$> go instrs
+      else
+        go instrs
     go (Trivial : instrs) =
       go instrs
     go (Auto {hints, depth} : instrs) = do

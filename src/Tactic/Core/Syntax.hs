@@ -6,6 +6,7 @@
 
 module Tactic.Core.Syntax where
 
+import Data.Char as Char
 import Data.Map as Map
 import Language.Haskell.TH
 import Language.Haskell.TH.Datatype
@@ -31,7 +32,7 @@ data Instr
   | -- | asserts a boolean exp must be true
     Assert {exp :: Exp}
   | -- | use refinment of an exp
-    Use {exp :: Exp}
+    Use {exp :: Exp, requires :: [String]}
   | -- | condition on a boolean exp
     Cond {exp :: Exp}
   | -- | trivial
@@ -130,3 +131,11 @@ inferType e env = do
           Nothing ->
             pure Nothing
       ConE name -> Just <$> reifyType name
+
+nameToExp :: Name -> Exp
+nameToExp name =
+  case nameBase name of
+    (c : s) ->
+      if Char.isLower c
+        then VarE name
+        else ConE name
