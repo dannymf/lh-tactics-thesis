@@ -201,7 +201,7 @@ inlineTacticSplices tacticSplices ls =
               -- replace
               Just tacticSplice ->
                 concat
-                  [ fmap ("-- " ++) ls_group,
+                  [ fmap ("-- " ++) (ls_group ++ ["|]"]),
                     ["-- %tactic:begin:" ++ name_TS tacticSplice],
                     lines_TS tacticSplice,
                     ["-- %tactic:end:" ++ name_TS tacticSplice]
