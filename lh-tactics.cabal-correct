@@ -32,6 +32,7 @@ library
       Tactic.Core.PprintPreSyntax
       Tactic.Core.PreSyntax
       Tactic.Core.Quote
+      Tactic.Core.Splice
       Tactic.Core.SplicePreSyntax
       Tactic.Core.SpliceSyntax
       Tactic.Core.Syntax
@@ -72,6 +73,7 @@ executable lh-tactics
       Tactic.Core.PprintPreSyntax
       Tactic.Core.PreSyntax
       Tactic.Core.Quote
+      Tactic.Core.Splice
       Tactic.Core.SplicePreSyntax
       Tactic.Core.SpliceSyntax
       Tactic.Core.Syntax
@@ -92,6 +94,7 @@ executable lh-tactics
     , template-haskell ==2.17.0.0
     , th-abstraction
     , transformers
+    , lh-tactics
   default-language: Haskell2010
 
 test-suite test-test
@@ -99,7 +102,6 @@ test-suite test-test
   main-is: Spec.hs
   other-modules:
       Test1
-      Test2
       Paths_lh_tactics
   hs-source-dirs:
       test

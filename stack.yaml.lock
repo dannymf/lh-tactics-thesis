@@ -3,11 +3,80 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: liquid-base-4.15.0.0@sha256:a28cc9217966f18ef02f9b7e7c060f7682187e2c37ca20ce80088cc28860eb35,9129
+    pantry-tree:
+      size: 14987
+      sha256: 02b9ddefb47927f2cefdba09f1ac7164a5aafd7f31bfb4a577fca8905c012325
+  original:
+    hackage: liquid-base-4.15.0.0@sha256:a28cc9217966f18ef02f9b7e7c060f7682187e2c37ca20ce80088cc28860eb35,9129
+- completed:
+    hackage: liquidhaskell-0.8.10.7@sha256:dd613a6a9c9c8eaa39015574955580415800e81f6f2c2b9ee3332608dce20831,15895
+    pantry-tree:
+      size: 281592
+      sha256: d1900790fb0b4a76bf7663e6c559947c8beec0f0038f3f5a1e781de18ff34e4c
+  original:
+    hackage: liquidhaskell-0.8.10.7@sha256:dd613a6a9c9c8eaa39015574955580415800e81f6f2c2b9ee3332608dce20831,15895
+- completed:
+    hackage: liquid-fixpoint-0.8.10.7@sha256:dee303753cf1adc8b071aa314179e26e784f3832d17b8317b114a0ac07818800,7980
+    pantry-tree:
+      size: 45857
+      sha256: 991355b0b62906fd858b0d7dda7309cc37f71e155ca612cc023b9da0d5386e56
+  original:
+    hackage: liquid-fixpoint-0.8.10.7@sha256:dee303753cf1adc8b071aa314179e26e784f3832d17b8317b114a0ac07818800,7980
+- completed:
+    hackage: liquid-ghc-prim-0.7.0@sha256:8d99d771235d388ed54393faa2712c880e60b659fa574877fc5f383d4d49f4ed,1763
+    pantry-tree:
+      size: 912
+      sha256: 2e85095d397912b2d5b65054cd613e93dd7aa31ed4a4ff4fd265be207ece35e0
+  original:
+    hackage: liquid-ghc-prim-0.7.0@sha256:8d99d771235d388ed54393faa2712c880e60b659fa574877fc5f383d4d49f4ed,1763
+- completed:
+    hackage: hashable-1.3.3.0@sha256:7f3b67151162a1dfe8472dc30430af98ed5470801d3f4b6c9b8d7a7443c920d4,4068
+    pantry-tree:
+      size: 1110
+      sha256: 6160857b68b296172e66cb7a1d467cf11182cd2a5ddaec0af3b23b1d4fadd0b2
+  original:
+    hackage: hashable-1.3.3.0@sha256:7f3b67151162a1dfe8472dc30430af98ed5470801d3f4b6c9b8d7a7443c920d4,4068
+- completed:
+    hackage: optparse-applicative-0.15.1.0@sha256:29ff6146aabf54d46c4c8788e8d1eadaea27c94f6d360c690c5f6c93dac4b07e,4810
+    pantry-tree:
+      size: 2904
+      sha256: 04ad3816bc580cbe0834d3d1f4729ddd386abfe31b43e5b14968885f636d1b0d
+  original:
+    hackage: optparse-applicative-0.15.1.0@sha256:29ff6146aabf54d46c4c8788e8d1eadaea27c94f6d360c690c5f6c93dac4b07e,4810
+- completed:
+    hackage: recursion-schemes-5.2.2@sha256:4d346a1ac4a31226b2eceb15bd815a4aa5cec3042f069322095ba2ce32224e50,3684
+    pantry-tree:
+      size: 666
+      sha256: d7e2327339aff858ef51842b904cc8fed244899396c211a543cbcd23cfc0b04d
+  original:
+    hackage: recursion-schemes-5.2.2@sha256:4d346a1ac4a31226b2eceb15bd815a4aa5cec3042f069322095ba2ce32224e50,3684
+- completed:
+    hackage: megaparsec-8.0.0@sha256:362f85e243ecbcb550e1de6e5c74ba5a50c09edaa1208c99bc5b9fd242227fc6,3808
+    pantry-tree:
+      size: 1446
+      sha256: 955117c00a86970f2d0c215f33cf5293b16589c04678a0a790c03368ab6fd0aa
+  original:
+    hackage: megaparsec-8.0.0@sha256:362f85e243ecbcb550e1de6e5c74ba5a50c09edaa1208c99bc5b9fd242227fc6,3808
+- completed:
+    hackage: rest-rewrite-0.1.1@sha256:eb7a6bc86dec6cb22c4af24d0dcf25ce4dac70f467d44a4e7901ac53d3c3ff5b,4983
+    pantry-tree:
+      size: 3353
+      sha256: 6d3eb8c3dbecf65e82db3bc1b4e3ed1a2d5884b7db1b42ba0a30036cdc7533ed
+  original:
+    hackage: rest-rewrite-0.1.1@sha256:eb7a6bc86dec6cb22c4af24d0dcf25ce4dac70f467d44a4e7901ac53d3c3ff5b,4983
+- completed:
+    hackage: strict-io-0.2.2@sha256:1cc96f9a123a919ff9ee479f740cbc9fa9edf7c8ac65334de3fdce07638949ed,1012
+    pantry-tree:
+      size: 345
+      sha256: 2fd47d6f9374805075d176012d95d8ea28e643639b8d028f35f732618b5d1683
+  original:
+    hackage: strict-io-0.2.2@sha256:1cc96f9a123a919ff9ee479f740cbc9fa9edf7c8ac65334de3fdce07638949ed
 snapshots:
 - completed:
-    size: 619093
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/19/5.yaml
-    sha256: b936d27d647a31a8834d3efec126e2a07dee9c9bd6dd401d9bdac77e7b278f1e
-  original:
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/19/5.yaml
+    size: 633412
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2022/2/1.yaml
+    sha256: b0da46bd3f3a2c14c20ccf4a47d344ea93c7ecae1672815cb87415cdb246a073
+  original: nightly-2022-02-01
