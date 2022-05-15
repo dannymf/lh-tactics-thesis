@@ -147,9 +147,16 @@ spliceExp instrs =
     go (Use {exp, requires} : instrs) = do
       env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
-      debugM $ "inScope: " ++ show inScope
       if inScope then
         Exp exp <$> go instrs
+      else
+        go instrs
+    go (Cond {exp, requires} : instrs) = do
+      env <- get 
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      if inScope then do
+        pe <- go instrs 
+        pure $ If exp pe pe
       else
         go instrs
     go (Trivial : instrs) =

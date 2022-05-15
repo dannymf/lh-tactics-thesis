@@ -98,6 +98,19 @@ parseInstr =
         case mb_requires of
           Just requires -> pure [Use {exp, requires}]
           Nothing -> pure [Use {exp, requires = []}],
+      -- Cond
+      do
+        parseSymbol "condition"
+        exp <- lexeme parseExp
+        mb_requires <- P.optionMaybe . P.try $ do
+          parseSymbol "requires"
+          parseSymbol "["
+          requires <- parseNameString `P.sepBy` parseSymbol ","
+          parseSymbol "]"
+          pure requires
+        case mb_requires of 
+          Just requires -> pure [Cond {exp, requires}]
+          Nothing -> pure [Cond {exp, requires = []}],
       -- Trivial
       do
         parseSymbol "trivial"

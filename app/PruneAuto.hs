@@ -87,7 +87,7 @@ pruneAutos options filePath defName tacticSplice = do
       let tacticEncoding = encoding_TS tacticSplice
       let preDec = decode_ tacticEncoding :: PreDec
       loop preDec
-    else putStrLn "Prune autos error: Must pass LH before pruning autos"
+    else putStrLn $ "Prune autos error: Must pass LH before pruning autos:\n\n" ++ str_err
   where
     loop :: PreDec -> IO ()
     loop (PreDec x t pe) = do

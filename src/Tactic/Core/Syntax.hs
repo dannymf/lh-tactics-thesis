@@ -34,7 +34,7 @@ data Instr
   | -- | use refinment of an exp
     Use {exp :: Exp, requires :: [String]}
   | -- | condition on a boolean exp
-    Cond {exp :: Exp}
+    Cond {exp :: Exp, requires :: [String]}
   | -- | trivial
     Trivial
 
@@ -49,8 +49,8 @@ instance Show Instr where
   show (Hint {exp}) = "hint " ++ pprint exp
   show (Auto {hints, depth}) = "auto " ++ show (pprint <$> hints) ++ " " ++ show depth
   show (Assert {exp}) = "assert " ++ pprint exp
-  show (Use {exp}) = "use " ++ pprint exp
-  show (Cond {exp}) = "cond " ++ pprint exp
+  show (Use {exp, requires}) = "use " ++ pprint exp ++ " requires " ++ show requires
+  show (Cond {exp, requires}) = "cond " ++ pprint exp ++ " requires " ++ show requires
   show Trivial = "trivial"
 
 showIntros :: [[String]] -> String 
