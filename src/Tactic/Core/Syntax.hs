@@ -29,8 +29,10 @@ data Instr
     Hint {exp :: Exp}
   | -- | auto
     Auto {hints :: [Exp], depth :: Int}
-  | -- | asserts a boolean exp must be true
-    Assert {exp :: Exp}
+  | -- | asserts the case where a boolean exp holds
+    Assert {exp :: Exp, requires :: [String]}
+  | -- | dismisses the case where  a boolean exp holds
+    Dismiss {exp :: Exp, requires :: [String]}
   | -- | use refinment of an exp
     Use {exp :: Exp, requires :: [String]}
   | -- | condition on a boolean exp
@@ -48,7 +50,8 @@ instance Show Instr where
   show (Induct {name, intros}) = "induct " ++ name ++ case intros of {Just intros -> " as " ++ showIntros intros; Nothing -> ""}
   show (Hint {exp}) = "hint " ++ pprint exp
   show (Auto {hints, depth}) = "auto " ++ show (pprint <$> hints) ++ " " ++ show depth
-  show (Assert {exp}) = "assert " ++ pprint exp
+  show (Assert {exp, requires}) = "assert " ++ pprint exp ++ " requires " ++ show requires
+  show (Dismiss {exp, requires}) = "dismiss " ++ pprint exp ++ " requires " ++ show requires
   show (Use {exp, requires}) = "use " ++ pprint exp ++ " requires " ++ show requires
   show (Cond {exp, requires}) = "cond " ++ pprint exp ++ " requires " ++ show requires
   show Trivial = "trivial"

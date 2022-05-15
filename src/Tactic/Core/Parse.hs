@@ -46,6 +46,14 @@ parseIntros = do
   parseSymbol "]"
   pure intros
 
+parseRequires :: Parser (Maybe [String])
+parseRequires = P.optionMaybe . P.try $ do
+  parseSymbol "requires"
+  parseSymbol "["
+  requires <- parseNameString `P.sepBy` parseSymbol ","
+  parseSymbol "]"
+  pure requires
+
 parseInstr :: Parser [Instr]
 parseInstr =
   P.choice . fmap P.try $
@@ -84,17 +92,27 @@ parseInstr =
       do
         parseSymbol "assert"
         exp <- lexeme parseExp
-        pure [Assert {exp}],
+        mb_requires <- parseRequires
+        let requires =
+              case mb_requires of
+                Just requires -> requires
+                Nothing -> []
+        pure [Assert {exp, requires}],
+      -- Dismiss
+      do
+        parseSymbol "dismiss"
+        exp <- lexeme parseExp
+        mb_requires <- parseRequires
+        let requires =
+              case mb_requires of
+                Just requires -> requires
+                Nothing -> []
+        pure [Dismiss {exp, requires}],
       -- Use
       do
         parseSymbol "use"
         exp <- lexeme parseExp
-        mb_requires <- P.optionMaybe . P.try $ do
-          parseSymbol "requires"
-          parseSymbol "["
-          requires <- parseNameString `P.sepBy` parseSymbol ","
-          parseSymbol "]"
-          pure requires
+        mb_requires <- parseRequires
         case mb_requires of
           Just requires -> pure [Use {exp, requires}]
           Nothing -> pure [Use {exp, requires = []}],
@@ -102,13 +120,8 @@ parseInstr =
       do
         parseSymbol "condition"
         exp <- lexeme parseExp
-        mb_requires <- P.optionMaybe . P.try $ do
-          parseSymbol "requires"
-          parseSymbol "["
-          requires <- parseNameString `P.sepBy` parseSymbol ","
-          parseSymbol "]"
-          pure requires
-        case mb_requires of 
+        mb_requires <- parseRequires
+        case mb_requires of
           Just requires -> pure [Cond {exp, requires}]
           Nothing -> pure [Cond {exp, requires = []}],
       -- Trivial

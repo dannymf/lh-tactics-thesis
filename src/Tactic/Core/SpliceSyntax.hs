@@ -142,8 +142,20 @@ spliceExp instrs =
           pure $ Case (VarE name) ms
         Just type_ -> fail $ "Cannot induct " ++ show name ++ " of non-datatype type " ++ show type_
         Nothing -> go instrs -- skip this instruction, since target not in scope
-    go (Assert {exp} : instrs) =
-      If exp <$> go instrs <*> pure TrivialPreExp
+    go (Assert {exp, requires} : instrs) = do
+      env <- get
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      if inScope then 
+        If exp <$> go instrs <*> pure TrivialPreExp
+      else
+        go instrs
+    go (Dismiss {exp, requires} : instrs) = do
+      env <- get
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      if inScope then 
+        flip (If exp) <$> go instrs <*> pure TrivialPreExp
+      else
+        go instrs
     go (Use {exp, requires} : instrs) = do
       env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
