@@ -54,6 +54,17 @@ parseRequires = P.optionMaybe . P.try $ do
   parseSymbol "]"
   pure requires
 
+parseFlags :: Parser [String]
+parseFlags = do
+  mb_start <- P.optionMaybe $ P.try $ parseSymbol "#["
+  case mb_start of 
+    Just _ -> do 
+      flags <- parseWord `P.sepBy` parseSymbol ","
+      parseSymbol "]"
+      pure flags
+    Nothing -> 
+      pure []
+
 parseInstr :: Parser [Instr]
 parseInstr =
   P.choice . fmap P.try $
@@ -69,7 +80,8 @@ parseInstr =
         intros <- P.optionMaybe . P.try $ do
           parseSymbol "as"
           parseIntros
-        pure [Destruct {name, intros}],
+        flags <- parseFlags
+        pure [Destruct {name, intros, flags}],
       -- Induct
       do
         parseSymbol "induct"
@@ -77,7 +89,8 @@ parseInstr =
         intros <- P.optionMaybe . P.try $ do
           parseSymbol "as"
           parseIntros
-        pure [Induct {name, intros}],
+        flags <- parseFlags
+        pure [Induct {name, intros, flags}],
       -- Auto
       do
         parseSymbol "auto"
@@ -187,8 +200,11 @@ parseName = lexeme do
 
 parseNameString :: Parser String
 parseNameString = lexeme do
-  s <- P.many1 parseNameChar
-  pure s
+  P.many1 parseNameChar
+
+parseWord :: Parser String 
+parseWord = lexeme do 
+  P.many1 P.alphaNum
 
 parseInt :: Parser Int
 parseInt = lexeme do

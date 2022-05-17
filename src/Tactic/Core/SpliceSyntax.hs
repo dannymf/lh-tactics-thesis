@@ -70,14 +70,15 @@ spliceExp instrs =
         Just type_ -> do modify $ introArg name type_
         Nothing -> fail $ "Cannot intro " ++ show name ++ " at index  " ++ show i ++ " in def_type " ++ pprint def_type
       Lambda name <$> go instrs
-    go (Destruct {name, intros} : instrs) = do
+    go (Destruct {name, intros, flags} : instrs) = do
       name <- pure $ mkName name
       env <- get
       mb_type <- get >>= lift . inferType (VarE name)
       case mb_type of
         (Just type_@(ConT dtName)) -> local do
           -- remove destructed target from environment
-          modify $ deleteCtx (VarE name)
+          when (not $ "remember" `elem` flags) $ do
+            modify $ deleteCtx (VarE name)
           -- get datatype info
           dtInfo <- lift $ reifyDatatype dtName
           -- gen matches
@@ -102,15 +103,16 @@ spliceExp instrs =
           pure $ Case (VarE name) ms
         Just type_ -> fail $ "Cannot destruct " ++ show name ++ " of non-datatype type " ++ show type_
         Nothing -> go instrs -- skip this instruction, since target not in scope
-    go (Induct {name, intros} : instrs) = do
+    go (Induct {name, intros, flags} : instrs) = do
       name <- pure $ mkName name
       env <- get
       mb_type <- get >>= \env -> lift $ inferType (VarE name) env
 
       case mb_type of
         Just type_@(ConT dtName) -> local do
-          -- remove destructed target from environment
-          modify $ deleteCtx (VarE name)
+          -- remove inducted target from environment
+          when (not $ "remember" `elem` flags) $ do
+            modify $ deleteCtx (VarE name)
           -- get datatype info
           dtInfo <- lift $ reifyDatatype dtName
           -- gen matches
@@ -173,6 +175,10 @@ spliceExp instrs =
         go instrs
     go (Trivial : instrs) =
       go instrs
+    go (Refine {string, requires} : instrs) = do
+      -- env <- get
+      -- refinement <- interpretRefinement string
+      error "unimplemented: refine"
     go (Auto {hints, depth} : instrs) = do
       env <- get
       -- ctx' <- lift $ Map.fromList <$> mapM (\x -> (x,) <$> inferType x env) hints
@@ -192,6 +198,9 @@ spliceExp instrs =
           (\env -> env {ctx = Map.union ctx' (ctx env)})
           $ genNeutrals (Just proof) depth
       AutoPreExp es initPruneAutoState <$> go instrs
+
+interpretRefinement :: String -> Splice ([Type], [Exp] -> Exp)
+interpretRefinement string = undefined
 
 mapWithIndex :: (Int -> a -> b) -> [a] -> [b]
 mapWithIndex f xs = go 0 xs

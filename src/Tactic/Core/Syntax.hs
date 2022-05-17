@@ -7,6 +7,7 @@
 module Tactic.Core.Syntax where
 
 import Data.Char as Char
+import qualified Data.List as List
 import Data.Map as Map
 import Language.Haskell.TH
 import Language.Haskell.TH.Datatype
@@ -15,16 +16,15 @@ import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
 import System.IO.Unsafe (unsafePerformIO)
 import Tactic.Core.Debug
-import qualified Data.List as List
 import Prelude hiding (exp)
 
 data Instr
   = -- | splices a lambda; adds name to environment
     Intro {name :: String}
   | -- | destructs a datatype
-    Destruct {name :: String, intros :: Maybe [[String]]}
+    Destruct {name :: String, intros :: Maybe [[String]], flags :: [String]}
   | -- | inducts on an input argument
-    Induct {name :: String, intros :: Maybe [[String]]}
+    Induct {name :: String, intros :: Maybe [[String]], flags :: [String]}
   | -- | add hint to subsequent auto hints
     Hint {exp :: Exp}
   | -- | auto
@@ -37,6 +37,8 @@ data Instr
     Use {exp :: Exp, requires :: [String]}
   | -- | condition on a boolean exp
     Cond {exp :: Exp, requires :: [String]}
+  | -- | refine an application, automatically looking for completions
+    Refine {string :: String, requires :: [String]}
   | -- | trivial
     Trivial
 
@@ -46,17 +48,18 @@ defaultAutoDepth = 3 :: Int
 
 instance Show Instr where
   show (Intro {name}) = "intro " ++ name
-  show (Destruct {name, intros}) = "destruct " ++ name ++ case intros of {Just intros -> " as " ++ showIntros intros; Nothing -> ""}
-  show (Induct {name, intros}) = "induct " ++ name ++ case intros of {Just intros -> " as " ++ showIntros intros; Nothing -> ""}
+  show (Destruct {name, intros}) = "destruct " ++ name ++ case intros of Just intros -> " as " ++ showIntros intros; Nothing -> ""
+  show (Induct {name, intros}) = "induct " ++ name ++ case intros of Just intros -> " as " ++ showIntros intros; Nothing -> ""
   show (Hint {exp}) = "hint " ++ pprint exp
   show (Auto {hints, depth}) = "auto " ++ show (pprint <$> hints) ++ " " ++ show depth
   show (Assert {exp, requires}) = "assert " ++ pprint exp ++ " requires " ++ show requires
   show (Dismiss {exp, requires}) = "dismiss " ++ pprint exp ++ " requires " ++ show requires
   show (Use {exp, requires}) = "use " ++ pprint exp ++ " requires " ++ show requires
   show (Cond {exp, requires}) = "cond " ++ pprint exp ++ " requires " ++ show requires
+  show (Refine {string, requires}) = "refine {" ++ string ++ "} requires " ++ show requires
   show Trivial = "trivial"
 
-showIntros :: [[String]] -> String 
+showIntros :: [[String]] -> String
 showIntros intros = "[" ++ List.intercalate " | " (List.intercalate " " <$> intros) ++ "]"
 
 type Ctx = Map Exp Type

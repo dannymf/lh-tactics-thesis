@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           lh-tactics
-version:        0.1.0.22
+version:        0.1.0.24
 description:    Please see the README on GitHub at <https://github.com/githubuser/lh-tactics#readme>
 homepage:       https://github.com/githubuser/lh-tactics#readme
 bug-reports:    https://github.com/githubuser/lh-tactics/issues
