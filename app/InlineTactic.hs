@@ -4,7 +4,6 @@
 
 module InlineTactic where
 
-import Options
 import Building
 import Control.Monad as Monad
 import Data.Char as Char
@@ -12,6 +11,7 @@ import Data.List as List
 import Data.Maybe as Maybe
 import Debug
 import File
+import Options
 import Parsing
 import System.IO as IO
 import System.IO.Unsafe (unsafePerformIO)
@@ -51,7 +51,11 @@ inlineTactics options filePath = do
   --   -- waitForProcess ph_build -- ? causes hang if std_err = CreatePipe
   --   return mb_hdl_err
   -- str_err <- hGetContents (fromJust mb_hdl_err)
-  -- clean -- required when using `stack run`, since that builds first, but not necessary now that its in a separate project
+
+  -- required when using `stack run`, since that builds first, but not necessary
+  -- now that its in a separate project
+  -- clean
+
   Just str_err_raw <- build $ defaultOptions_build {ddump_splices = True, capture_std_err = True}
   -- debugIO "===[ str_err_raw ]==="
   -- debugIO str_err_raw

@@ -57,10 +57,10 @@ lemE (E x) = trivial
 
 return [] 
 
-[tactic|
-test :: A -> Proof
-test a = auto [f1, f2, f3, f4, lemE] 6
-|]
+-- [tactic|
+-- test :: A -> Proof
+-- test a = auto [f1, f2, f3, f4, lemE] 6
+-- |]
 
 -- | ]
 main :: IO ()

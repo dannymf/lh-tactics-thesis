@@ -27,7 +27,7 @@ type Parser a = P.ParsecT String () Q a
 runParser :: Parser a -> String -> Q a
 runParser p str =
   P.runParserT p () "SourceName" str >>= \case
-    Left err -> fail $ show err
+    Left err -> error $ show err
     Right a -> pure a
 
 parseInstrs :: Parser [Instr]
@@ -46,27 +46,62 @@ parseIntros = do
   parseSymbol "]"
   pure intros
 
+-- `[x1, x2, ...]:`
 parseRequires :: Parser (Maybe [String])
 parseRequires = P.optionMaybe . P.try $ do
-  parseSymbol "requires"
   parseSymbol "["
   requires <- parseNameString `P.sepBy` parseSymbol ","
-  parseSymbol "]"
+  parseSymbol "]:"
+
   pure requires
 
 parseFlags :: Parser [String]
 parseFlags = do
   mb_start <- P.optionMaybe $ P.try $ parseSymbol "#["
-  case mb_start of 
-    Just _ -> do 
+  case mb_start of
+    Just _ -> do
       flags <- parseWord `P.sepBy` parseSymbol ","
       parseSymbol "]"
       pure flags
-    Nothing -> 
+    Nothing ->
       pure []
 
+parseInstrRequires :: [String] -> Parser [Instr]
+parseInstrRequires requires =
+  P.choice . fmap P.try $
+    [ -- Assert
+      do
+        parseSymbol "assert"
+        exp <- lexeme parseExp
+        pure [Assert {exp, requires}],
+      -- Dismiss
+      do
+        parseSymbol "dismiss"
+        exp <- lexeme parseExp
+        pure [Dismiss {exp, requires}],
+      -- Use
+      do
+        parseSymbol "use"
+        exp <- lexeme parseExp
+        pure [Use {exp, requires}],
+      -- Cond
+      do
+        parseSymbol "condition"
+        exp <- lexeme parseExp
+        pure [Cond {exp, requires}],
+      -- error
+      do
+        error "only these tactics allow a scope guard: assert, dismiss, use, condition"
+    ]
+
 parseInstr :: Parser [Instr]
-parseInstr =
+parseInstr = do
+  parseRequires >>= \case
+    Just requires -> parseInstrRequires requires
+    Nothing -> parseInstr'
+
+parseInstr' :: Parser [Instr]
+parseInstr' =
   P.choice . fmap P.try $
     [ -- Intro
       do
@@ -105,38 +140,22 @@ parseInstr =
       do
         parseSymbol "assert"
         exp <- lexeme parseExp
-        mb_requires <- parseRequires
-        let requires =
-              case mb_requires of
-                Just requires -> requires
-                Nothing -> []
-        pure [Assert {exp, requires}],
+        pure [Assert {exp, requires = []}],
       -- Dismiss
       do
         parseSymbol "dismiss"
         exp <- lexeme parseExp
-        mb_requires <- parseRequires
-        let requires =
-              case mb_requires of
-                Just requires -> requires
-                Nothing -> []
-        pure [Dismiss {exp, requires}],
+        pure [Dismiss {exp, requires = []}],
       -- Use
       do
         parseSymbol "use"
         exp <- lexeme parseExp
-        mb_requires <- parseRequires
-        case mb_requires of
-          Just requires -> pure [Use {exp, requires}]
-          Nothing -> pure [Use {exp, requires = []}],
+        pure [Use {exp, requires = []}],
       -- Cond
       do
         parseSymbol "condition"
         exp <- lexeme parseExp
-        mb_requires <- parseRequires
-        case mb_requires of
-          Just requires -> pure [Cond {exp, requires}]
-          Nothing -> pure [Cond {exp, requires = []}],
+        pure [Cond {exp, requires = []}],
       -- Trivial
       do
         parseSymbol "trivial"
@@ -178,7 +197,7 @@ parseDecInstrs = do
 fromMP :: Either String a -> Parser a
 fromMP e = case e of
   Right a -> pure a
-  Left msg -> fail $ "metaparse: " ++ msg
+  Left msg -> error $ "metaparse: " ++ msg
 
 lexeme :: Parser a -> Parser a
 lexeme p = do
@@ -202,8 +221,8 @@ parseNameString :: Parser String
 parseNameString = lexeme do
   P.many1 parseNameChar
 
-parseWord :: Parser String 
-parseWord = lexeme do 
+parseWord :: Parser String
+parseWord = lexeme do
   P.many1 P.alphaNum
 
 parseInt :: Parser Int
@@ -219,7 +238,7 @@ parseIsChar c = do
 parseExp :: Parser Exp
 parseExp = do
   rest <- lookAheadRest
-  -- debugM $ "parseExp: " ++ rest
+  debugM $ "parseExp: " ++ rest
   -- str <- P.between (parseSymbol "{") (parseSymbol "}") (P.many1 P.anyChar)
   parseSymbol "{"
   str <- P.manyTill P.anyChar (P.try (parseSymbol "}"))

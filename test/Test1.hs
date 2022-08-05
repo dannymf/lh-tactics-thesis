@@ -33,7 +33,7 @@ return []
 test1 :: B -> Proof
 test1 b =
   induct b as [pf/];
-  use {f (f pf)} requires [pf]
+  [pf]: use {f (f pf)}
 |]
 
 
