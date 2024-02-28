@@ -21,6 +21,7 @@ import Language.Haskell.TH.Syntax
 import System.IO.Unsafe (unsafePerformIO)
 import Tactic.Core.Debug
 import Prelude hiding (exp)
+import Data.List (intercalate)
 
 data PreExp
   = Lambda Name PreExp

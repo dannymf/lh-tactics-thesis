@@ -18,11 +18,16 @@ flattenType (AppT (AppT (AppT MulArrowT (PromotedT n)) alpha) beta) =
    in (alpha : alphas, delta)
 flattenType alpha = ([], alpha)
 
+getSpine :: Type -> (Type, [Type])
+getSpine (AppT a b) = 
+  case getSpine a of
+    (ty, tys) -> (ty, tys ++ [b])
+getSpine ty = (ty, [])
+
 -- unflattenType :: ([Type], Type) -> Type
 -- unflattenType [] beta = beta
 -- unflattenType (alpha : alphas) beta = AppT (AppT ArrowT alpha) (unflattenType alphas beta)
 
--- because normal equality treats the types `ConT N` and `ConT Path.To.Module.N` as different, even if they are the same... how to fix this???
 compareTypes :: Type -> Type -> Bool
 compareTypes (ConT n1) (ConT n2) = nameBase n1 == nameBase n2
 compareTypes (AppT a1 b1) (AppT a2 b2) = compareTypes a1 a2 && compareTypes b1 b2
