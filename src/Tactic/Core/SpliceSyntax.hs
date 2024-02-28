@@ -5,6 +5,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
+{-# HLINT ignore "Use first" #-}
+
 {-@ LIQUID "--compile-spec" @-}
 
 module Tactic.Core.SpliceSyntax where
@@ -77,7 +81,7 @@ spliceExp instrs =
       case mb_type of
         (Just type_@(ConT dtName)) -> local do
           -- remove destructed target from environment
-          when (not $ "remember" `elem` flags) $ do
+          unless ("remember" `elem` flags) $ do
             modify $ deleteCtx (VarE name)
           -- get datatype info
           dtInfo <- lift $ reifyDatatype dtName
@@ -101,6 +105,10 @@ spliceExp instrs =
           ms <- sequence matches
           --
           pure $ Case (VarE name) ms
+        -- shouldn't do induction if the left part of the location is a type variable
+        -- Just (AppT b _) | b `in` [ListT, ConT] -> fail "todo"
+
+          -- go (Destruct {name, intros, flags} : instrs)
         Just type_ -> fail $ "Cannot destruct " ++ show name ++ " of non-datatype type " ++ show type_
         Nothing -> go instrs -- skip this instruction, since target not in scope
     go (Induct {name, intros, flags} : instrs) = do
@@ -111,10 +119,46 @@ spliceExp instrs =
       case mb_type of
         Just type_@(ConT dtName) -> local do
           -- remove inducted target from environment
-          when (not $ "remember" `elem` flags) $ do
+          unless ("remember" `elem` flags) $ do
             modify $ deleteCtx (VarE name)
           -- get datatype info
           dtInfo <- lift $ reifyDatatype dtName
+          -- gen matches
+          let dtConInfos = datatypeCons dtInfo
+          let matches :: [Splice (Pat, PreExp)]
+              matches =
+                ( \i conInfo -> local do
+                    -- collects newly bound variables with types, generates match's pattern
+                    (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
+                    -- add constructor's variables to `args_rec_ctx` at `name`
+                    (List.elemIndex name <$> gets def_argNames) >>= \case
+                      Just arg_i -> do
+                        modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (\(n, t) -> (VarE n, t)) $ vars) (args_rec_ctx env)}
+                      Nothing -> do
+                        -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
+                        -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
+                        return ()
+                    -- adds constructor's introduced terms to environment
+                    modify $ flip (foldl (flip (uncurry insertCtx))) ((\(n, t) -> (VarE n, t)) <$> vars)
+                    --
+                    expr <- go instrs
+                    -- gen match
+                    pure (pat, expr)
+                )
+                  `mapWithIndex` dtConInfos
+          -- generate case
+          ms <- sequence matches
+          --
+          pure $ Case (VarE name) ms
+        Just (AppT (ConT a) (ConT dtName))
+        --  | bool == ''Bool 
+         ->
+          local do
+          -- remove inducted target from environment
+          unless ("remember" `elem` flags) $ do
+            modify $ deleteCtx (VarE name)
+          -- get datatype info
+          dtInfo <- lift $ reifyDatatype a
           -- gen matches
           let dtConInfos = datatypeCons dtInfo
           let matches :: [Splice (Pat, PreExp)]
@@ -147,14 +191,14 @@ spliceExp instrs =
     go (Assert {exp, requires} : instrs) = do
       env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
-      if inScope then 
+      if inScope then
         If exp <$> go instrs <*> pure TrivialPreExp
       else
         go instrs
     go (Dismiss {exp, requires} : instrs) = do
       env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
-      if inScope then 
+      if inScope then
         flip (If exp) <$> go instrs <*> pure TrivialPreExp
       else
         go instrs
@@ -166,10 +210,10 @@ spliceExp instrs =
       else
         go instrs
     go (Cond {exp, requires} : instrs) = do
-      env <- get 
+      env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
       if inScope then do
-        pe <- go instrs 
+        pe <- go instrs
         pure $ If exp pe pe
       else
         go instrs
@@ -198,6 +242,7 @@ spliceExp instrs =
           (\env -> env {ctx = Map.union ctx' (ctx env)})
           $ genNeutrals (Just proof) depth
       AutoPreExp es initPruneAutoState <$> go instrs
+    go _ = fail "unsupported"
 
 interpretRefinement :: String -> Splice ([Type], [Exp] -> Exp)
 interpretRefinement string = undefined
@@ -216,6 +261,14 @@ indexIntros mb_intros i = f <$> mb_intros
       Just intro -> intro
       Nothing -> error $ "The intros " ++ show intros ++ "expected at least " ++ show i ++ " cases"
 
+-- basicContainer :: Type -> Bool 
+-- basicContainer (AppT ListT _) = True
+-- basicContainer (AppT (ConT List)) = False
+
+helper = (\(name, type_) -> case (name, type_) of
+      (n, VarT something) -> (name, ConT ''Bool)
+      (t, b) -> (t, b))
+
 spliceDec :: [Instr] -> Splice PreDec
 spliceDec instrs = do
   env <- get
@@ -229,7 +282,7 @@ getConVarsPat conInfo mb_intro = do
     case mb_intro of
       Just intro -> pure $ mkName <$> intro
       Nothing -> mapM typeToTermName conFields
-  let vars = (\(name, type_) -> (name, type_)) <$> zip names conFields
+  let vars = zip names conFields
   let pat = ConP conName $ VarP <$> names
   pure (vars, pat)
 
@@ -275,7 +328,8 @@ genNeutrals' e type_ gas = do
 genAtomsFromCtx :: Ctx -> Type -> Splice [Exp]
 genAtomsFromCtx ctx type_ = do
   let f :: [Exp] -> (Exp, Type) -> Splice [Exp]
-      f es (e, alpha) =
+      f es (e, alpha) = do
+        debugSplice $! "genAtomsFromCtx (" ++ pprint e ++ ") (" ++ pprint type_ ++ ") = " ++ show (pprint alpha) ++ " match? " ++ (show $ alpha `compareTypes` type_)
         (es <>) <$> if alpha `compareTypes` type_ then pure [e] else pure []
   es <- foldM f [] (Map.toList ctx)
   pure es
