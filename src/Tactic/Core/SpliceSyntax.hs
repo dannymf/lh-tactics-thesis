@@ -2,8 +2,10 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE TupleSections #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant pure" #-}
 
 {-@ LIQUID "--compile-spec" @-}
 
@@ -77,7 +79,7 @@ spliceExp instrs =
       case mb_type of
         (Just type_@(ConT dtName)) -> local do
           -- remove destructed target from environment
-          when (not $ "remember" `elem` flags) $ do
+          unless ("remember" `elem` flags) $ do
             modify $ deleteCtx (VarE name)
           -- get datatype info
           dtInfo <- lift $ reifyDatatype dtName
@@ -111,7 +113,7 @@ spliceExp instrs =
       case mb_type of
         Just type_@(ConT dtName) -> local do
           -- remove inducted target from environment
-          when (not $ "remember" `elem` flags) $ do
+          unless ("remember" `elem` flags) $ do
             modify $ deleteCtx (VarE name)
           -- get datatype info
           dtInfo <- lift $ reifyDatatype dtName
@@ -123,19 +125,19 @@ spliceExp instrs =
                     -- collects newly bound variables with types, generates match's pattern
                     (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
                     -- add constructor's variables to `args_rec_ctx` at `name`
-                    (List.elemIndex name <$> gets def_argNames) >>= \case
+                    gets def_argNames >>= (\case
                       Just arg_i -> do
                         modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (\(n, t) -> (VarE n, t)) $ vars) (args_rec_ctx env)}
                       Nothing -> do
                         -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
                         -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
-                        return ()
+                        return ()) . List.elemIndex name
                     -- adds constructor's introduced terms to environment
-                    modify $ flip (foldl (flip (uncurry insertCtx))) (fmap (\(n, t) -> (VarE n, t)) $ vars)
+                    modify $ flip (foldl (flip (uncurry insertCtx))) ((\(n, t) -> (VarE n, t)) <$> vars)
                     --
                     expr <- go instrs
                     -- gen match
-                    pure $ (pat, expr)
+                    pure (pat, expr)
                 )
                   `mapWithIndex` dtConInfos
           -- generate case
@@ -147,14 +149,14 @@ spliceExp instrs =
     go (Assert {exp, requires} : instrs) = do
       env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
-      if inScope then 
+      if inScope then
         If exp <$> go instrs <*> pure TrivialPreExp
       else
         go instrs
     go (Dismiss {exp, requires} : instrs) = do
       env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
-      if inScope then 
+      if inScope then
         flip (If exp) <$> go instrs <*> pure TrivialPreExp
       else
         go instrs
@@ -166,10 +168,10 @@ spliceExp instrs =
       else
         go instrs
     go (Cond {exp, requires} : instrs) = do
-      env <- get 
+      env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
       if inScope then do
-        pe <- go instrs 
+        pe <- go instrs
         pure $ If exp pe pe
       else
         go instrs
@@ -198,6 +200,7 @@ spliceExp instrs =
           (\env -> env {ctx = Map.union ctx' (ctx env)})
           $ genNeutrals (Just proof) depth
       AutoPreExp es initPruneAutoState <$> go instrs
+    go _ = error "unsupported case"
 
 interpretRefinement :: String -> Splice ([Type], [Exp] -> Exp)
 interpretRefinement string = undefined
@@ -238,6 +241,7 @@ typeToTermName type_ =
   case type_ of
     ConT name -> case nameBase name of
       (c : s) -> freshName (Char.toLower c : s)
+      [] -> error "empty"
     _ -> freshName "x"
 
 type Goal = Maybe Type
@@ -296,9 +300,9 @@ genRecursions goal gas = do
                 fanout
                   <$> traverse
                     ( \(arg_i, alpha) -> do
-                        (Map.lookup arg_i <$> gets args_rec_ctx) >>= \case
+                        gets args_rec_ctx >>= (\case
                           Just rec_ctx -> genAtomsFromCtx rec_ctx alpha -- gen only vars from ctx
-                          Nothing -> genNeutrals (Just alpha) (gas - 1) -- gen any neutral
+                          Nothing -> genNeutrals (Just alpha) (gas - 1)) . Map.lookup arg_i -- gen any neutral
                     )
                     (zip [0 .. length alphas] alphas)
               -- debugSplice $! "genRecursions.argss: " ++ pprint (foldl AppE r <$> argss)
@@ -310,4 +314,4 @@ canRecurse :: Splice Bool
 canRecurse = not . Map.null <$> gets args_rec_ctx
 
 matchesGoal :: Type -> Goal -> Bool
-matchesGoal type_ goal = maybe True (`compareTypes` type_) goal
+matchesGoal type_ = maybe True (`compareTypes` type_)

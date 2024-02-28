@@ -1,7 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 {-@ LIQUID "--compile-spec" @-}
 
@@ -75,14 +72,14 @@ instance Serialize PreExp where
     concat
       [ "#AutoPreExp",
         "#BeginAutoPreExps",
-        concat ((\e -> concat ["#ItemAutoExp", encode e]) <$> es),
+        concat ((\e -> "#ItemAutoExp" ++ encode e) <$> es),
         "#EndAutoPreExps",
         encode pe
       ]
-  encode (TrivialPreExp) = concat ["#TrivialPreExp"]
+  encode TrivialPreExp = "#TrivialPreExp"
 
   decode =
-    (decodeGroup "PreExp")
+    decodeGroup "PreExp"
       [ decodeLabeled (decodeStringMaybe "#Lambda") $
           Lambda <$> decode <*> decode,
         decodeLabeled (decodeStringMaybe "#Case") $
@@ -118,7 +115,7 @@ instance Serialize PreExp where
 instance Serialize PreDec where
   encode (PreDec x t e) = concat ["#Dec", encode x, encode t, encode e]
   decode =
-    (decodeGroup "PreDec")
+    decodeGroup "PreDec"
       [ decodeLabeled (decodeStringMaybe "#Dec") $
           PreDec <$> decode <*> decode <*> decode
       ]

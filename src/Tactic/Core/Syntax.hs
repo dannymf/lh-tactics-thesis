@@ -1,6 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 {-@ LIQUID "--compile-spec" @-}
 
@@ -60,7 +59,7 @@ instance Show Instr where
   show Trivial = "trivial"
 
 showIntros :: [[String]] -> String
-showIntros intros = "[" ++ List.intercalate " | " (List.intercalate " " <$> intros) ++ "]"
+showIntros intros = "[" ++ List.intercalate " | " (unwords <$> intros) ++ "]"
 
 type Ctx = Map Exp Type
 
@@ -125,7 +124,7 @@ emptyEnvironment =
 inferType :: Exp -> Environment -> Q (Maybe Type)
 inferType e env = do
   case Map.lookup e (ctx env) of
-    Just type_ -> Just <$> pure type_
+    Just type_ -> pure (Just type_)
     Nothing -> case e of
       VarE name -> do
         -- just to check if the name is in scope
@@ -141,6 +140,7 @@ inferType e env = do
 nameToExp :: Name -> Exp
 nameToExp name =
   case nameBase name of
+    [] -> error "empty"
     (c : s) ->
       if Char.isLower c
         then VarE name
