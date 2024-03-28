@@ -19,7 +19,7 @@ flattenType (AppT (AppT (AppT MulArrowT (PromotedT n)) alpha) beta) =
 flattenType alpha = ([], alpha)
 
 getSpine :: Type -> (Type, [Type])
-getSpine (AppT a b) = 
+getSpine (AppT a b) =
   case getSpine a of
     (ty, tys) -> (ty, tys ++ [b])
 getSpine ty = (ty, [])
@@ -43,7 +43,7 @@ index (_ : xs) i = index xs (i - 1)
 -- example: [ [x1, x2], [y1, y2] ] ==> [ [x1, y1], [x1, y2], [x2, y1], [x2, y2] ]
 fanout :: [[a]] -> [[a]]
 fanout [] = []
-fanout (xs : []) = [[a] | a <- xs]
+fanout [xs] = [[a] | a <- xs]
 fanout (xs : xss) = [a' : xs' | a' <- xs, xs' <- fanout xss]
 
 -- useMany [e1, e2, e3] == [|use e1 &&&& use e2 &&& use e3|]
@@ -57,7 +57,7 @@ conjunction [] = [|trivial|]
 conjunction [e] = pure e
 conjunction (e : es) = [|$(pure e) &&& $(conjunction es)|]
 
-conjunctionExp :: [Exp] -> Exp 
+conjunctionExp :: [Exp] -> Exp
 conjunctionExp [] = VarE (mkName "trivial")
-conjunctionExp [e] = e 
-conjunctionExp (e:es) = InfixE (Just e) (VarE (mkName "&&&")) (Just (conjunctionExp es))
+conjunctionExp [e] = e
+conjunctionExp (e : es) = InfixE (Just e) (VarE (mkName "&&&")) (Just (conjunctionExp es))

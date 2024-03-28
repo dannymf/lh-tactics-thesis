@@ -69,21 +69,23 @@ data Environment = Environment
     def_argTypes :: [Type],
     def_argNames :: [Name],
     arg_i :: Int,
-    args_rec_ctx :: Map Int Ctx, -- recursive-allowed context for each arg
+    args_rec_ctx :: Map.Map Int Ctx, -- recursive-allowed context for each arg
     ctx :: Ctx,
-    var_i :: Int
+    var_i :: Int,
+    tyvar_mappings :: Map.Map Type Type
   }
 
 instance Show Environment where
   show env =
     unlines
-      [ "def_name: " ++ show (def_name env),
-        "def_type: " ++ show (def_type env),
-        "def_argTypes: " ++ show (def_argTypes env),
-        "def_argNames: " ++ show (def_argNames env),
-        "arg_i: " ++ show (arg_i env),
-        "args_rec_ctx: " ++ show (args_rec_ctx env),
-        "ctx: " ++ show (ctx env)
+      [ "def_name': " ++ show (def_name env),
+        "def_type': " ++ show (def_type env),
+        "def_argTypes': " ++ show (def_argTypes env),
+        "def_argNames': " ++ show (def_argNames env),
+        "arg_i': " ++ show (arg_i env),
+        "args_rec_ctx': " ++ show (args_rec_ctx env),
+        "ctx': " ++ show (ctx env),
+        "tyvar_mappings: " ++ show (tyvar_mappings env)
       ]
 
 introArg :: Name -> Type -> Environment -> Environment
@@ -118,7 +120,8 @@ emptyEnvironment =
       arg_i = 0,
       args_rec_ctx = Map.empty,
       ctx = Map.empty,
-      var_i = 0
+      var_i = 0,
+      tyvar_mappings = Map.empty
     }
 
 inferType :: Exp -> Environment -> Q (Maybe Type)

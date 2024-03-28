@@ -1,9 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
 
 {-@ LIQUID "--compile-spec" @-}
 
@@ -42,7 +38,7 @@ splicePreExp (Exp e TrivialPreExp) = e
 splicePreExp (Exp e pe) = conjunctionExp [e, splicePreExp pe]
 splicePreExp (AutoPreExp es (PruneAutoState {kept}) TrivialPreExp) = conjunctionExp (es <> kept)
 splicePreExp (AutoPreExp es (PruneAutoState {kept}) pe) = conjunctionExp (es <> kept <> [splicePreExp pe])
-splicePreExp (TrivialPreExp) = VarE (mkName "trivial")
+splicePreExp TrivialPreExp = VarE (mkName "trivial")
 
 splicePreDec :: PreDec -> [Dec]
 splicePreDec (PreDec x t pe) =

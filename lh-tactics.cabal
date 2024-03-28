@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.36.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -34,6 +34,7 @@ library
       Tactic.Core.Quote
       Tactic.Core.SplicePreSyntax
       Tactic.Core.SpliceSyntax
+      Tactic.Core.SpliceV2
       Tactic.Core.Syntax
       Tactic.Core.Utility
   other-modules:
@@ -75,6 +76,7 @@ executable lh-tactics
       Tactic.Core.Quote
       Tactic.Core.SplicePreSyntax
       Tactic.Core.SpliceSyntax
+      Tactic.Core.SpliceV2
       Tactic.Core.Syntax
       Tactic.Core.Utility
       Paths_lh_tactics
