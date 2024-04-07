@@ -9,6 +9,8 @@ import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
 
 flattenType :: Type -> ([Type], Type)
+-- MUST FIND A WAY TO DISAMBIGUATE A FUNCTION AS A PARAMETER SINCE THIS IS ALSO FLATTENED
+-- flattenType (AppT ArrowT (AppT (AppT ArrowT (VarT a)) (VarT a)))
 flattenType (AppT (AppT ArrowT alpha) beta) =
   let (alphas, delta) = flattenType beta
    in (alpha : alphas, delta)

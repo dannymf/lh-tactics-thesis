@@ -9,7 +9,7 @@
 
 {-@ LIQUID "--compile-spec" @-}
 
-module Tactic.Core.SpliceV2 where
+module Tactic.Core.SpliceV3 where
 
 import Control.Monad
 import Control.Monad.Trans as Trans
@@ -175,11 +175,11 @@ spliceExp instrs =
       es <-
         withStateT
           (\env -> env {ctx = Map.union ctx' (ctx env)})
-          $ genNeutralsV2 (Just proof) depth
+          $ genNeutralsV3 proof depth
       AutoPreExp es initPruneAutoState <$> go instrs
     go _ = error "unsupported case"
 
-type Goal = Maybe Type
+type Goal = Type
 
 type Gas = Int
 
@@ -187,25 +187,24 @@ type Splice a = StateT Environment Q a
 
 type TypeSubs = Map.Map Type Type
 
-insertSubs :: [(Type, Type)] -> Environment -> Environment
-insertSubs subs env =
-  List.foldl' (\subs (t1, t2) -> env {tyvar_mappings = Map.insert t1 t2 $ tyvar_mappings env}) env subs
+genNeutralsV3 :: Goal -> Gas -> Splice [Exp]
+genNeutralsV3 goal 0 = pure []
+genNeutralsV3 goal gas = do
+  let (alphas, beta) = flattenType goal
+  genNeutralsAux goal alphas beta gas
 
-deleteSubs :: [Type] -> Environment -> Environment
-deleteSubs ts env =
-  List.foldl' (\subs t -> env {tyvar_mappings = Map.delete t $ tyvar_mappings env}) env ts
-
-genNeutralsV2 :: Goal -> Gas -> Splice [Exp]
-genNeutralsV2 goal 0 = pure []
-genNeutralsV2 goal gas = do
+  
+genNeutralsAux :: Goal -> [Type] -> Type -> Gas -> Splice [Exp]
+genNeutralsAux goal alphas beta gas = do
   vars <- Map.toList <$> gets ctx
   let f :: [Exp] -> (Exp, Type) -> Splice [Exp]
       f es (e, alpha) =
         (es <>)
           <$> let (_, beta) = flattenType alpha
-               in if maybe False (compareTypesPoly' beta) goal
+               in if compareTypesPoly' beta goal
                     then do
-                      debugSplice $! "DEBUG TYP: genNeutralsV2: alpha= " ++ pprint alpha
+                      debugSplice $! "DEBUG TYP: genNeutralsV3: alpha= " ++ pprint alpha
+                      -- MAKE THIS AUX ALSO BC OTHERWISE IT JUST REPEATEDLY RECURSES ON THE FUNCTION ARGUMENTS TOO
                       exps <- genNeutralsV2' e alpha gas
                       pure exps
                     else pure []
@@ -213,7 +212,8 @@ genNeutralsV2 goal gas = do
   debugSplice $! "DEBUG: genNeutralsV2: goal= " ++ show goal ++ " | es= " ++ show es
   pure es
 
-genNeutralsV2' :: Exp -> Type -> Gas -> StateT Environment Q [Exp]
+
+genNeutralsV2' :: Exp -> Type -> Gas -> Splice [Exp]
 genNeutralsV2' e type_ gas = do
   debugSplice $! "DEBUG: genNeutralsPRIME: e= " ++ pprint e ++ " | type= " ++ pprint type_
   let (alphas, beta) = flattenType type_
@@ -221,7 +221,7 @@ genNeutralsV2' e type_ gas = do
     if List.null alphas
       then pure [e]
       else do
-        argss <- fanout <$> traverse (\alpha -> genNeutralsV2 (Just alpha) (gas - 1)) alphas
+        argss <- fanout <$> traverse (\alpha -> genNeutralsV3 alpha (gas - 1)) alphas
         let es = foldl AppE e <$> argss
         pure es
   debugSplice $! "DEBUG: genNeutralsPRIME: e= " ++ pprint e ++ " | type= " ++ pprint type_ ++ " | es= " ++ show (pprint <$> es)
@@ -240,8 +240,6 @@ genAtomsFromCtx gas ctx type_ = do
   es <- foldM f [] (Map.toList ctx)
   debugSplice $! "DEBUG: genAtomsFromCtx: type= " ++ pprint type_ ++ " | es= " ++ show (pprint <$> es)
   pure es
-
-
 
 --   genAtomsFromCtx :: Gas -> Ctx -> TypeSubs -> Type -> Splice [Exp]
 -- genAtomsFromCtx 0 ctx subs type_ = 
@@ -301,7 +299,7 @@ genRecursions goal gas = do
       r <- VarE <$> gets def_name
       rho <- gets def_type
       let (alphas, beta) = flattenType rho
-      if maybe False (compareTypesPoly' beta) goal
+      if compareTypesPoly' beta goal
         then do
           debugSplice $! "genRecursions DEBUG TYP: genNeutralsV2: alpha= " ++ pprint rho
           if List.null alphas
@@ -314,7 +312,7 @@ genRecursions goal gas = do
                         gets args_rec_ctx
                           >>= ( \case
                                   Just rec_ctx -> genAtomsFromCtx 3 rec_ctx alpha -- gen only vars from ctx
-                                  Nothing -> genNeutralsV2 (Just alpha) (gas - 1)
+                                  Nothing -> genNeutralsAux goal [] alpha (gas - 1)
                               )
                             . Map.lookup arg_i -- gen any neutral
                     )
@@ -327,20 +325,6 @@ genRecursions goal gas = do
 canRecurse :: Splice Bool
 canRecurse = not . Map.null <$> gets args_rec_ctx
 
-matchesGoal :: Type -> Goal -> Bool
-matchesGoal type_ = maybe True (`compareTypes` type_)
-
-matchesGoalPoly :: Type -> Goal -> (Bool, [(Type, Type)])
-matchesGoalPoly type_ = maybe (True, []) (`compareTypesPoly` type_)
-
-compareTypesPoly :: Type -> Type -> (Bool, [(Type, Type)])
-compareTypesPoly t1 t2 = case (t1, t2) of
-  (ConT n1, ConT n2) -> (nameBase n1 == nameBase n2, [])
-  (VarT a, t2) -> (True, [(VarT a, t2)])
-  (AppT a1 b1, AppT a2 b2) | a1 == a2 -> compareTypesPoly b1 b2
-  _ -> (False, [])
-  --  t1, t2 | t1 == t2
-
 contains' :: Type -> Type -> Bool
 contains' t1 t2 = case (t1, t2) of
   (VarT _, ConT _) -> False
@@ -350,8 +334,6 @@ contains' t1 t2 = case (t1, t2) of
   (AppT a b, VarT c) -> contains' a (VarT c) || contains' b (VarT c)
   (VarT c, AppT _ _) -> False
   _ -> False
-
-
 
 compareTypesPoly' :: Type -> Type -> Bool
 compareTypesPoly' t1 t2 = case (t1, t2) of

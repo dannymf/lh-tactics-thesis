@@ -33,17 +33,15 @@ build :: Options_build -> IO (Maybe String)
 build options = do
   let ghc_options :: [String]
       ghc_options =
-        concat
-          [ if ddump_splices options then ["-ddump-splices"] else [],
-            if checkLH options then ["-fplugin=LiquidHaskell"] else ["-fplugin-opt=LiquidHaskell:--compile-spec"]
-          ]
+        (["-ddump-splices" | ddump_splices options]) ++ (
+            if checkLH options then ["-fplugin=LiquidHaskell"] else ["-fplugin-opt=LiquidHaskell:--compile-spec"])
   mb_hdl_err <- do
     (_, _, mb_hdl_err, ph) <-
       createProcess $
         ( shell . unwords . concat $
             [ ["stack build"],
               ["--fast"], -- ? does this break TH somehow?
-              if not (null ghc_options) then ["--ghc-options \"" ++ unwords ghc_options ++ "\""] else []
+              ["--ghc-options \"" ++ unwords ghc_options ++ "\"" | not (null ghc_options)]
             ]
         )
           { std_err = if capture_std_err options then CreatePipe else Inherit

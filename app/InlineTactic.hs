@@ -159,10 +159,7 @@ extractTacticSplice (l1 : ls1) =
             l : ls ->
               let indent = takeWhile isSpace l
                in map
-                    ( \l -> case stripPrefix indent l of
-                        Just l' -> l'
-                        Nothing -> l
-                    )
+                    ( \l -> fromMaybe l $ stripPrefix indent l)
                     (l : ls)
 
           name = takeWhile (not . isSpace) (head ls')
