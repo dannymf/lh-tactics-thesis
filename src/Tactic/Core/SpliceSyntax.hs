@@ -29,7 +29,7 @@ import Language.Haskell.TH.Syntax hiding (lift)
 import Proof
 import Tactic.Core.Debug
 import Tactic.Core.PreSyntax
-import Tactic.Core.SpliceV2 (genNeutralsV2)
+import Tactic.Core.SpliceV3 (genNeutralsV3)
 import Tactic.Core.Syntax
 import Tactic.Core.Utility
 import Prelude hiding (exp)
@@ -75,119 +75,10 @@ spliceExp instrs =
         Just type_ -> do modify $ introArg name type_
         Nothing -> fail $ "Cannot intro " ++ show name ++ " at index  " ++ show i ++ " in def_type " ++ pprint def_type
       Lambda name <$> go instrs
-    go (Destruct {name, intros, flags} : instrs) = do
-      name <- pure $ mkName name
-      env <- get
-      mb_type <- get >>= lift . inferType (VarE name)
-      case mb_type of
-        (Just type_@(ConT dtName)) -> local do
-          -- remove destructed target from environment
-          unless ("remember" `elem` flags) $ do
-            modify $ deleteCtx (VarE name)
-          -- get datatype info
-          dtInfo <- lift $ reifyDatatype dtName
-          -- gen matches
-          let dtConInfos = datatypeCons dtInfo
-
-          let matches :: [Splice (Pat, PreExp)]
-              matches =
-                ( \i conInfo -> local do
-                    -- collects newly bound variables with types, generates match's pattern
-                    (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
-                    -- adds constructor's introduced terms to environment
-                    modify $ flip (foldl (\env (e, type_) -> insertCtx e type_ env)) (fmap (first VarE) vars)
-                    -- body
-                    expr <- go instrs
-                    -- gen match
-                    pure (pat, expr)
-                )
-                  `mapWithIndex` dtConInfos
-          -- generate case
-          ms <- sequence matches
-          --
-          pure $ Case (VarE name) ms
-        Just type_ -> fail $ "Cannot destruct " ++ show name ++ " of non-datatype type " ++ show type_
-        Nothing -> go instrs -- skip this instruction, since target not in scope
-    go (Induct {name, intros, flags} : instrs) = do
-      name <- pure $ mkName name
-      env <- get
-      mb_type <- get >>= \env -> lift $ inferType (VarE name) env
-
-      case mb_type of
-        Just type_@(ConT dtName) -> local do
-          -- remove inducted target from environment
-          unless ("remember" `elem` flags) $ do
-            modify $ deleteCtx (VarE name)
-          -- get datatype info
-          dtInfo <- lift $ reifyDatatype dtName
-          -- gen matches
-          let dtConInfos = datatypeCons dtInfo
-          let matches :: [Splice (Pat, PreExp)]
-              matches =
-                ( \i conInfo -> local do
-                    -- collects newly bound variables with types, generates match's pattern
-                    (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
-                    -- add constructor's variables to `args_rec_ctx` at `name`
-                    gets def_argNames
-                      >>= ( \case
-                              Just arg_i -> do
-                                modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (first VarE) $ vars) (args_rec_ctx env)}
-                              Nothing -> do
-                                -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
-                                -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
-                                return ()
-                          )
-                        . List.elemIndex name
-                    -- adds constructor's introduced terms to environment
-                    modify $ flip (foldl (flip (uncurry insertCtx))) (first VarE <$> vars)
-                    --
-                    expr <- go instrs
-                    -- gen match
-                    pure (pat, expr)
-                )
-                  `mapWithIndex` dtConInfos
-          -- generate case
-          ms <- sequence matches
-          --
-          pure $ Case (VarE name) ms
-        Just (AppT (ConT a) _) -> local do
-          -- remove inducted target from environment
-          unless ("remember" `elem` flags) $ do
-            modify $ deleteCtx (VarE name)
-          -- get datatype info
-          dtInfo <- lift $ reifyDatatype a
-          -- gen matches
-          let dtConInfos = datatypeCons dtInfo
-          let matches :: [Splice (Pat, PreExp)]
-              matches =
-                ( \i conInfo -> local do
-                    -- collects newly bound variables with types, generates match's pattern
-                    (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
-                    -- add constructor's variables to `args_rec_ctx` at `name`
-                    gets def_argNames
-                      >>= ( \case
-                              Just arg_i -> do
-                                modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (first VarE) $ vars) (args_rec_ctx env)}
-                              Nothing -> do
-                                -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
-                                -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
-                                return ()
-                          )
-                        . List.elemIndex name
-                    -- adds constructor's introduced terms to environment
-                    modify $ flip (foldl (flip (uncurry insertCtx))) (first VarE <$> vars)
-                    --
-                    expr <- go instrs
-                    -- gen match
-                    pure (pat, expr)
-                )
-                  `mapWithIndex` dtConInfos
-          -- generate case
-          ms <- sequence matches
-          --
-          pure $ Case (VarE name) ms
-        Just type_ -> fail $ "Cannot induct " ++ show name ++ " of non-datatype type " ++ show type_
-        Nothing -> go instrs -- skip this instruction, since target not in scope
+    go (Destruct {name, intros, flags} : instrs) = 
+      destruct name intros flags instrs
+    go (Induct {name, intros, flags} : instrs) = 
+      induct name intros flags instrs
     go (Assert {exp, requires} : instrs) = do
       env <- get
       inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
@@ -237,9 +128,96 @@ spliceExp instrs =
       es <-
         withStateT
           (\env -> env {ctx = Map.union ctx' (ctx env)})
-          $ genNeutralsV2 (Just proof) depth
+          $ genNeutralsV3 proof depth
       AutoPreExp es initPruneAutoState <$> go instrs
     go _ = error "unsupported case"
+
+    destruct :: String -> Maybe [[String]] -> [String] -> [Instr] -> Splice PreExp
+    destruct name intros flags instrs = do
+      name <- pure $ mkName name
+      env <- get
+      mb_type <- get >>= lift . inferType (VarE name)
+      case mb_type of
+        Just (ConT dtName) -> destructDt name intros flags dtName instrs 
+        Just (AppT (ConT dtName) _) -> destructDt name intros flags dtName instrs
+        Just type_ -> fail $ "Cannot destruct " ++ show name ++ " of non-datatype type " ++ show type_
+        Nothing -> go instrs -- skip this instruction, since target not in scope
+    
+    destructDt :: Name -> Maybe [[String]] -> [String] -> Name -> [Instr] -> Splice PreExp
+    destructDt name intros flags dtName instrs = local do
+          -- remove destructed target from environment
+          unless ("remember" `elem` flags) $ do
+            modify $ deleteCtx (VarE name)
+          -- get datatype info
+          dtInfo <- lift $ reifyDatatype dtName
+          -- gen matches
+          let dtConInfos = datatypeCons dtInfo
+
+          let matches :: [Splice (Pat, PreExp)]
+              matches =
+                ( \i conInfo -> local do
+                    -- collects newly bound variables with types, generates match's pattern
+                    (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
+                    -- adds constructor's introduced terms to environment
+                    modify $ flip (foldl (\env (e, type_) -> insertCtx e type_ env)) (fmap (first VarE) vars)
+                    -- body
+                    expr <- go instrs
+                    -- gen match
+                    pure (pat, expr)
+                )
+                  `mapWithIndex` dtConInfos
+          -- generate case
+          ms <- sequence matches
+          --
+          pure $ Case (VarE name) ms
+    induct :: String -> Maybe [[String]] -> [String] -> [Instr] -> Splice PreExp
+    induct name intros flags instrs = do
+      name <- pure $ mkName name
+      env <- get
+      mb_type <- get >>= \env -> lift $ inferType (VarE name) env
+      case mb_type of
+        Just (ConT dtName) -> inductDt name intros flags dtName instrs
+        Just (AppT (ConT dtName) _) -> inductDt name intros flags dtName instrs
+        Just type_ -> fail $ "Cannot induct " ++ show name ++ " of non-datatype type " ++ show type_
+        Nothing -> go instrs -- skip this instruction, since target not in scope
+    
+    inductDt :: Name -> Maybe [[String]] -> [String] -> Name -> [Instr] -> Splice PreExp
+    inductDt name intros flags dtName instrs = local do
+      -- remove inducted target from environment
+      unless ("remember" `elem` flags) $ do
+        modify $ deleteCtx (VarE name)
+      -- get datatype info
+      dtInfo <- lift $ reifyDatatype dtName
+      -- gen matches
+      let dtConInfos = datatypeCons dtInfo
+      let matches :: [Splice (Pat, PreExp)]
+          matches =
+            ( \i conInfo -> local do
+                -- collects newly bound variables with types, generates match's pattern
+                (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
+                -- add constructor's variables to `args_rec_ctx` at `name`
+                gets def_argNames
+                  >>= ( \case
+                          Just arg_i -> do
+                            modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (first VarE) $ vars) (args_rec_ctx env)}
+                          Nothing -> do
+                            -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
+                            -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
+                            return ()
+                      )
+                    . List.elemIndex name
+                -- adds constructor's introduced terms to environment
+                modify $ flip (foldl (flip (uncurry insertCtx))) (first VarE <$> vars)
+                --
+                expr <- go instrs
+                -- gen match
+                pure (pat, expr)
+            )
+              `mapWithIndex` dtConInfos
+      -- generate case
+      ms <- sequence matches
+      --
+      pure $ Case (VarE name) ms
 
 interpretRefinement :: String -> Splice ([Type], [Exp] -> Exp)
 interpretRefinement string = undefined

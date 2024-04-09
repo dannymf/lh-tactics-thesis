@@ -11,6 +11,8 @@
 
 module Tactic.Core.SpliceV3 where
 
+import Prelude hiding (exp)
+import Data.Maybe
 import Control.Monad
 import Control.Monad.Trans as Trans
 import Control.Monad.Trans.State as State
@@ -27,6 +29,7 @@ import Tactic.Core.Debug
 import Tactic.Core.PreSyntax
 import Tactic.Core.Syntax
 import Tactic.Core.Utility
+import Text.Printf
 
 -- JUST DO GENNEUTRALS FOR THE DESIRED TYPE-- LIKE LIST A???
 
@@ -45,12 +48,85 @@ spliceExp instrs =
       _ -> go (instrs ++ [Auto {hints = defaultAutoHints, depth = defaultAutoDepth}])
     else go instrs
   where
-    go (Destruct {name, intros, flags} : instrs) = do
+    go :: [Instr] -> Splice PreExp
+    go [] = pure TrivialPreExp
+    go (Intro {name} : instrs) = do
+      name <- pure $ mkName name
+      env <- get
+      types <- gets def_argTypes
+      def_type <- gets def_type
+      i <- gets arg_i
+      env <- get
+      case types `index` i of
+        Just type_ -> do modify $ introArg name type_
+        Nothing -> fail $ "Cannot intro " ++ show name ++ " at index  " ++ show i ++ " in def_type " ++ pprint def_type
+      Lambda name <$> go instrs
+    go (Destruct {name, intros, flags} : instrs) = 
+      destruct name intros flags instrs
+    go (Induct {name, intros, flags} : instrs) = 
+      induct name intros flags instrs
+    go (Assert {exp, requires} : instrs) = do
+      env <- get
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      if inScope
+        then If exp <$> go instrs <*> pure TrivialPreExp
+        else go instrs
+    go (Dismiss {exp, requires} : instrs) = do
+      env <- get
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      if inScope
+        then flip (If exp) <$> go instrs <*> pure TrivialPreExp
+        else go instrs
+    go (Use {exp, requires} : instrs) = do
+      env <- get
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      if inScope
+        then Exp exp <$> go instrs
+        else go instrs
+    go (Cond {exp, requires} : instrs) = do
+      env <- get
+      inScope <- lift $ all isJust <$> mapM (\x -> inferType (nameToExp $ mkName x) env) requires
+      if inScope
+        then do
+          pe <- go instrs
+          pure $ If exp pe pe
+        else go instrs
+    go (Trivial : instrs) =
+      go instrs
+    go (Auto {hints, depth} : instrs) = do
+      env <- get
+      -- ctx' <- lift $ Map.fromList <$> mapM (\x -> (x,) <$> inferType x env) hints
+      let typings =
+            mapM
+              ( \x -> do
+                  mb_type <- inferType x env
+                  case mb_type of
+                    Just type_ -> pure [(x, type_)]
+                    Nothing -> pure []
+              )
+              hints
+      ctx' <- lift $ Map.fromList <$> (concat <$> typings)
+      proof <- lift [t|Proof|]
+      es <-
+        withStateT
+          (\env -> env {ctx = Map.union ctx' (ctx env)})
+          $ genNeutralsV3 proof depth
+      AutoPreExp es initPruneAutoState <$> go instrs
+    go _ = error "unsupported case"
+
+    destruct :: String -> Maybe [[String]] -> [String] -> [Instr] -> Splice PreExp
+    destruct name intros flags instrs = do
       name <- pure $ mkName name
       env <- get
       mb_type <- get >>= lift . inferType (VarE name)
       case mb_type of
-        (Just type_@(ConT dtName)) -> local do
+        Just (ConT dtName) -> destructDt name intros flags dtName instrs 
+        Just (AppT (ConT dtName) _) -> destructDt name intros flags dtName instrs
+        Just type_ -> fail $ "Cannot destruct " ++ show name ++ " of non-datatype type " ++ show type_
+        Nothing -> go instrs -- skip this instruction, since target not in scope
+    
+    destructDt :: Name -> Maybe [[String]] -> [String] -> Name -> [Instr] -> Splice PreExp
+    destructDt name intros flags dtName instrs = local do
           -- remove destructed target from environment
           unless ("remember" `elem` flags) $ do
             modify $ deleteCtx (VarE name)
@@ -76,108 +152,55 @@ spliceExp instrs =
           ms <- sequence matches
           --
           pure $ Case (VarE name) ms
-        Just type_ -> fail $ "Cannot destruct " ++ show name ++ " of non-datatype type " ++ show type_
-        Nothing -> go instrs -- skip this instruction, since target not in scope
-    go (Induct {name, intros, flags} : instrs) = do
+    induct :: String -> Maybe [[String]] -> [String] -> [Instr] -> Splice PreExp
+    induct name intros flags instrs = do
       name <- pure $ mkName name
       env <- get
       mb_type <- get >>= \env -> lift $ inferType (VarE name) env
-
       case mb_type of
-        Just type_@(ConT dtName) -> local do
-          -- remove inducted target from environment
-          unless ("remember" `elem` flags) $ do
-            modify $ deleteCtx (VarE name)
-          -- get datatype info
-          dtInfo <- lift $ reifyDatatype dtName
-          -- gen matches
-          let dtConInfos = datatypeCons dtInfo
-          let matches :: [Splice (Pat, PreExp)]
-              matches =
-                ( \i conInfo -> local do
-                    -- collects newly bound variables with types, generates match's pattern
-                    (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
-                    -- add constructor's variables to `args_rec_ctx` at `name`
-                    gets def_argNames
-                      >>= ( \case
-                              Just arg_i -> do
-                                modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (first VarE) $ vars) (args_rec_ctx env)}
-                              Nothing -> do
-                                -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
-                                -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
-                                return ()
-                          )
-                        . List.elemIndex name
-                    -- adds constructor's introduced terms to environment
-                    modify $ flip (foldl (flip (uncurry insertCtx))) (first VarE <$> vars)
-                    --
-                    expr <- go instrs
-                    -- gen match
-                    pure (pat, expr)
-                )
-                  `mapWithIndex` dtConInfos
-          -- generate case
-          ms <- sequence matches
-          --
-          pure $ Case (VarE name) ms
-        Just (AppT (ConT a) (ConT b)) -> local do
-          -- remove inducted target from environment
-          unless ("remember" `elem` flags) $ do
-            modify $ deleteCtx (VarE name)
-          -- get datatype info
-          dtInfo <- lift $ reifyDatatype a
-          -- gen matches
-          let dtConInfos = datatypeCons dtInfo
-          let matches :: [Splice (Pat, PreExp)]
-              matches =
-                ( \i conInfo -> local do
-                    -- collects newly bound variables with types, generates match's pattern
-                    (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
-                    -- add constructor's variables to `args_rec_ctx` at `name`
-                    gets def_argNames
-                      >>= ( \case
-                              Just arg_i -> do
-                                modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (first VarE) $ vars) (args_rec_ctx env)}
-                              Nothing -> do
-                                -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
-                                -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
-                                return ()
-                          )
-                        . List.elemIndex name
-                    -- adds constructor's introduced terms to environment
-                    modify $ flip (foldl (flip (uncurry insertCtx))) (first VarE <$> vars)
-                    --
-                    expr <- go instrs
-                    -- gen match
-                    pure (pat, expr)
-                )
-                  `mapWithIndex` dtConInfos
-          -- generate case
-          ms <- sequence matches
-          --
-          pure $ Case (VarE name) ms
+        Just (ConT dtName) -> inductDt name intros flags dtName instrs
+        Just (AppT (ConT dtName) _) -> inductDt name intros flags dtName instrs
         Just type_ -> fail $ "Cannot induct " ++ show name ++ " of non-datatype type " ++ show type_
         Nothing -> go instrs -- skip this instruction, since target not in scope
-    go (Auto {hints, depth} : instrs) = do
-      env <- get
-      -- ctx' <- lift $ Map.fromList <$> mapM (\x -> (x,) <$> inferType x env) hints
-      let typings =
-            mapM
-              ( \x -> do
-                  mb_type <- inferType x env
-                  case mb_type of
-                    Just type_ -> pure [(x, type_)]
-                    Nothing -> pure []
-              )
-              hints
-      ctx' <- lift $ Map.fromList <$> (concat <$> typings)
-      proof <- lift [t|Proof|]
-      es <-
-        withStateT
-          (\env -> env {ctx = Map.union ctx' (ctx env)})
-          $ genNeutralsV3 proof depth
-      AutoPreExp es initPruneAutoState <$> go instrs
-    go _ = error "unsupported case"
+    
+    inductDt :: Name -> Maybe [[String]] -> [String] -> Name -> [Instr] -> Splice PreExp
+    inductDt name intros flags dtName instrs = local do
+      -- remove inducted target from environment
+      unless ("remember" `elem` flags) $ do
+        modify $ deleteCtx (VarE name)
+      -- get datatype info
+      dtInfo <- lift $ reifyDatatype dtName
+      -- gen matches
+      let dtConInfos = datatypeCons dtInfo
+      let matches :: [Splice (Pat, PreExp)]
+          matches =
+            ( \i conInfo -> local do
+                -- collects newly bound variables with types, generates match's pattern
+                (vars, pat) <- getConVarsPat conInfo (indexIntros intros i)
+                -- add constructor's variables to `args_rec_ctx` at `name`
+                gets def_argNames
+                  >>= ( \case
+                          Just arg_i -> do
+                            modify $ \env -> env {args_rec_ctx = Map.insert arg_i (Map.fromList . fmap (first VarE) $ vars) (args_rec_ctx env)}
+                          Nothing -> do
+                            -- TODO: dont need this anymore, since can induct on non-arguments: fail $ "Cannot find argument index of argument " ++ show name
+                            -- ! however, this could potentially cause problems where it's possible to auto your way into infinite recursion, right?
+                            return ()
+                      )
+                    . List.elemIndex name
+                -- adds constructor's introduced terms to environment
+                modify $ flip (foldl (flip (uncurry insertCtx))) (first VarE <$> vars)
+                --
+                expr <- go instrs
+                -- gen match
+                pure (pat, expr)
+            )
+              `mapWithIndex` dtConInfos
+      -- generate case
+      ms <- sequence matches
+      --
+      pure $ Case (VarE name) ms
+
 
 type Goal = Type
 
@@ -191,37 +214,41 @@ genNeutralsV3 :: Goal -> Gas -> Splice [Exp]
 genNeutralsV3 goal 0 = pure []
 genNeutralsV3 goal gas = do
   let (alphas, beta) = flattenType goal
-  genNeutralsAux goal alphas beta gas
+  recursions <- genRecursions goal gas
+  debugSplice $! printf "INIT CALL: genNeutralsV3: alphas=%s | beta=%s | recursions=%s" (pprint alphas) (pprint beta) (pprint recursions) 
+  genNeutralsAux beta recursions gas
 
-  
-genNeutralsAux :: Goal -> [Type] -> Type -> Gas -> Splice [Exp]
-genNeutralsAux goal alphas beta gas = do
+genNeutralsAux :: Goal -> [Exp] -> Gas -> Splice [Exp]
+genNeutralsAux goal recursions 0 = pure []
+genNeutralsAux goal recursions gas = do
   vars <- Map.toList <$> gets ctx
   let f :: [Exp] -> (Exp, Type) -> Splice [Exp]
       f es (e, alpha) =
         (es <>)
-          <$> let (_, beta) = flattenType alpha
-               in if compareTypesPoly' beta goal
+          <$> 
+          let (_, beta) = flattenType alpha in 
+                if compareTypesPoly' beta goal
                     then do
-                      debugSplice $! "DEBUG TYP: genNeutralsV3: alpha= " ++ pprint alpha
+                      debugSplice $! "DEBUG TYP: genNeutralsV3: alpha= " ++ pprint beta
                       -- MAKE THIS AUX ALSO BC OTHERWISE IT JUST REPEATEDLY RECURSES ON THE FUNCTION ARGUMENTS TOO
-                      exps <- genNeutralsV2' e alpha gas
+                      exps <- genNeutralsV3' e alpha recursions (gas - 1)
                       pure exps
                     else pure []
-  es <- (<>) <$> foldM f [] vars <*> genRecursions goal gas
-  debugSplice $! "DEBUG: genNeutralsV2: goal= " ++ show goal ++ " | es= " ++ show es
+  es <- (<>) <$> foldM f [] vars <*> pure recursions
+  debugSplice $! "DEBUG: genNeutralsV3: goal= " ++ show goal ++ " | es= " ++ show es
   pure es
 
-
-genNeutralsV2' :: Exp -> Type -> Gas -> Splice [Exp]
-genNeutralsV2' e type_ gas = do
+genNeutralsV3' :: Exp -> Type -> [Exp] -> Gas -> Splice [Exp]
+genNeutralsV3' e type_ recursions 0 = pure []
+genNeutralsV3' e type_ recursions gas = do
   debugSplice $! "DEBUG: genNeutralsPRIME: e= " ++ pprint e ++ " | type= " ++ pprint type_
+  ctx <- gets ctx
   let (alphas, beta) = flattenType type_
   es <-
     if List.null alphas
       then pure [e]
       else do
-        argss <- fanout <$> traverse (\alpha -> genNeutralsV3 alpha (gas - 1)) alphas
+        argss <- fanout <$> traverse (genNeutralsAux type_ (gas - 1) ctx) alphas
         let es = foldl AppE e <$> argss
         pure es
   debugSplice $! "DEBUG: genNeutralsPRIME: e= " ++ pprint e ++ " | type= " ++ pprint type_ ++ " | es= " ++ show (pprint <$> es)
@@ -298,28 +325,30 @@ genRecursions goal gas = do
     True -> do
       r <- VarE <$> gets def_name
       rho <- gets def_type
+      ctx <- gets ctx
+      debugSplice $! printf "DBG genRecusrions: def_type=%s" (pprint rho)
       let (alphas, beta) = flattenType rho
-      if compareTypesPoly' beta goal
-        then do
-          debugSplice $! "genRecursions DEBUG TYP: genNeutralsV2: alpha= " ++ pprint rho
-          if List.null alphas
-            then fail "impossible: cannot recurse with 0 arguments"
-            else do
-              argss <-
-                fanout
-                  <$> traverse
-                    ( \(arg_i, alpha) -> do
-                        gets args_rec_ctx
-                          >>= ( \case
-                                  Just rec_ctx -> genAtomsFromCtx 3 rec_ctx alpha -- gen only vars from ctx
-                                  Nothing -> genNeutralsAux goal [] alpha (gas - 1)
-                              )
-                            . Map.lookup arg_i -- gen any neutral
-                    )
-                    (zip [0 .. length alphas] alphas)
-              -- debugSplice $! "genRecursions.argss: " ++ pprint (foldl AppE r <$> argss)
-              pure $ foldl AppE r <$> argss
-        else pure []
+      -- if compareTypesPoly' beta goal
+      --   then do
+      debugSplice $! "genRecursions DEBUG TYP: genNeutralsV2: alpha= " ++ pprint rho
+      if List.null alphas
+        then fail "impossible: cannot recurse with 0 arguments"
+        else do
+          argss <-
+            fanout
+              <$> traverse
+                ( \(arg_i, alpha) -> do
+                    gets args_rec_ctx
+                      >>= ( \case
+                              Just rec_ctx -> genAtomsFromCtx 3 rec_ctx alpha -- gen only vars from ctx
+                              Nothing -> genAtomsFromCtx 3 ctx alpha
+                          )
+                        . Map.lookup arg_i -- gen any neutral
+                )
+                (zip [0 .. length alphas] alphas)
+          -- debugSplice $! "genRecursions.argss: " ++ pprint (foldl AppE r <$> argss)
+          pure $ foldl AppE r <$> argss
+        -- else pure []
     False -> pure []
 
 canRecurse :: Splice Bool
