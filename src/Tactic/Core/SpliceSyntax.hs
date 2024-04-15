@@ -33,6 +33,7 @@ import Tactic.Core.SpliceV3 (genNeutralsV3)
 import Tactic.Core.Syntax
 import Tactic.Core.Utility
 import Prelude hiding (exp)
+import Tactic.Core.SpliceV2 (genNeutralsV2)
 
 type Splice a = StateT Environment Q a
 
@@ -128,7 +129,7 @@ spliceExp instrs =
       es <-
         withStateT
           (\env -> env {ctx = Map.union ctx' (ctx env)})
-          $ genNeutralsV3 proof depth
+          $ genNeutralsV3 proof True depth
       AutoPreExp es initPruneAutoState <$> go instrs
     go _ = error "unsupported case"
 

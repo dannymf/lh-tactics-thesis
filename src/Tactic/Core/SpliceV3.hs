@@ -110,7 +110,7 @@ spliceExp instrs =
       es <-
         withStateT
           (\env -> env {ctx = Map.union ctx' (ctx env)})
-          $ genNeutralsV3 proof depth
+          $ genNeutralsV3 proof True depth
       AutoPreExp es initPruneAutoState <$> go instrs
     go _ = error "unsupported case"
 
@@ -210,17 +210,10 @@ type Splice a = StateT Environment Q a
 
 type TypeSubs = Map.Map Type Type
 
-genNeutralsV3 :: Goal -> Gas -> Splice [Exp]
-genNeutralsV3 goal 0 = pure []
-genNeutralsV3 goal gas = do
-  let (alphas, beta) = flattenType goal
-  recursions <- genRecursions goal gas
-  debugSplice $! printf "INIT CALL: genNeutralsV3: alphas=%s | beta=%s | recursions=%s" (pprint alphas) (pprint beta) (pprint recursions) 
-  genNeutralsAux beta recursions gas
-
-genNeutralsAux :: Goal -> [Exp] -> Gas -> Splice [Exp]
-genNeutralsAux goal recursions 0 = pure []
-genNeutralsAux goal recursions gas = do
+genNeutralsV3 :: Goal -> Bool -> Gas -> Splice [Exp]
+genNeutralsV3 goal canFlatten 0 = pure []
+genNeutralsV3 goal canFlatten gas = do
+  recursions <- genRecursions goal canFlatten gas
   vars <- Map.toList <$> gets ctx
   let f :: [Exp] -> (Exp, Type) -> Splice [Exp]
       f es (e, alpha) =
@@ -231,24 +224,28 @@ genNeutralsAux goal recursions gas = do
                     then do
                       debugSplice $! "DEBUG TYP: genNeutralsV3: alpha= " ++ pprint beta
                       -- MAKE THIS AUX ALSO BC OTHERWISE IT JUST REPEATEDLY RECURSES ON THE FUNCTION ARGUMENTS TOO
-                      exps <- genNeutralsV3' e alpha recursions (gas - 1)
+                      exps <- genNeutralsV3' e alpha canFlatten (gas - 1)
                       pure exps
                     else pure []
   es <- (<>) <$> foldM f [] vars <*> pure recursions
   debugSplice $! "DEBUG: genNeutralsV3: goal= " ++ show goal ++ " | es= " ++ show es
   pure es
 
-genNeutralsV3' :: Exp -> Type -> [Exp] -> Gas -> Splice [Exp]
-genNeutralsV3' e type_ recursions 0 = pure []
-genNeutralsV3' e type_ recursions gas = do
-  debugSplice $! "DEBUG: genNeutralsPRIME: e= " ++ pprint e ++ " | type= " ++ pprint type_
+-- genNeutralsAux :: Goal -> [Exp] -> Gas -> Splice [Exp]
+-- genNeutralsAux goal recursions 0 = pure []
+
+genNeutralsV3' :: Exp -> Type -> Bool ->Gas -> Splice [Exp]
+genNeutralsV3' e type_ canFlatten 0 = pure []
+genNeutralsV3' e type_ canFlatten gas = do
   ctx <- gets ctx
+  debugSplice $! "DEBUG: genNeutralsPRIME: e= " ++ pprint e ++ " | type= " ++ pprint type_
+  atoms <- genAtomsFromCtx (gas - 1) ctx type_
   let (alphas, beta) = flattenType type_
   es <-
     if List.null alphas
       then pure [e]
       else do
-        argss <- fanout <$> traverse (genNeutralsAux type_ (gas - 1) ctx) alphas
+        argss <- fanout <$> traverse (\alpha -> genNeutralsV3 alpha False (gas - 1)) alphas
         let es = foldl AppE e <$> argss
         pure es
   debugSplice $! "DEBUG: genNeutralsPRIME: e= " ++ pprint e ++ " | type= " ++ pprint type_ ++ " | es= " ++ show (pprint <$> es)
@@ -258,7 +255,6 @@ genNeutralsV3' e type_ recursions gas = do
 
 -- | generates any expressions directly from context (no applications) that have goal type
 genAtomsFromCtx :: Gas -> Ctx -> Type -> Splice [Exp]
-genAtomsFromCtx 0 ctx type_ = pure []
 genAtomsFromCtx gas ctx type_ = do
   let f :: [Exp] -> (Exp, Type) -> Splice [Exp]
       f es (e, alpha) = do
@@ -267,35 +263,6 @@ genAtomsFromCtx gas ctx type_ = do
   es <- foldM f [] (Map.toList ctx)
   debugSplice $! "DEBUG: genAtomsFromCtx: type= " ++ pprint type_ ++ " | es= " ++ show (pprint <$> es)
   pure es
-
---   genAtomsFromCtx :: Gas -> Ctx -> TypeSubs -> Type -> Splice [Exp]
--- genAtomsFromCtx 0 ctx subs type_ = 
---   pure []
--- genAtomsFromCtx gas ctx subs type_ = do
---   -- Applications!
---   es <- foldM f [] (Map.toList ctx)
---   pure es
---   where
---     g :: [Exp] -> (Exp, Type) -> Splice [Exp]
---     g es (_, ty) =
---       case ty of
---         AppT (ConT dtName) (VarT x) -> do
---           dtInfo <- lift $ reifyDatatype dtName
---           let dtConInfos = datatypeCons dtInfo
---           let conNames = constructorName <$> dtConInfos
---           let listConFields = constructorFields <$> dtConInfos
---           debugSplice $! "genAtomsFromCtx.listConFields: " ++ pprint listConFields
---           expsss :: [[[Exp]]] <- zipWithM (genApps (gas - 1) ctx subs) conNames listConFields
---           debugSplice $! "genAtomsFromCtx.expsss: " ++ pprint expsss
---           pure []
-
---         _ -> error "oops"
-
---     f :: [Exp] -> (Exp, Type) -> Splice [Exp]
---     f es (e, alpha) = g es (e, alpha)
-      -- case alpha of
-      --   AppT (ConT c) (VarT x) -> g es (e, alpha)
-      --   _ -> (es <>) <$> if mReplace subs alpha `compareTypes` type_ then pure [e] else pure []
 
 -- generate all neutrals for a constructor and its fields
 genApps :: Gas -> Ctx -> TypeSubs -> Name -> [Type] -> Splice [[Exp]]
@@ -319,36 +286,38 @@ genApps gas ctx typeSubs conName conFields = do
   debugSplice $! "genApps.conFieldExps: " ++ "(conName: " ++ pprint conName ++ ") " ++ pprint conFieldExps
   pure conFieldExps
 
-genRecursions :: Goal -> Int -> Splice [Exp]
-genRecursions goal gas = do
+genRecursions :: Goal -> Bool -> Gas -> Splice [Exp]
+genRecursions goal canFlatten gas = do
   canRecurse >>= \case
     True -> do
       r <- VarE <$> gets def_name
       rho <- gets def_type
       ctx <- gets ctx
       debugSplice $! printf "DBG genRecusrions: def_type=%s" (pprint rho)
-      let (alphas, beta) = flattenType rho
-      -- if compareTypesPoly' beta goal
-      --   then do
-      debugSplice $! "genRecursions DEBUG TYP: genNeutralsV2: alpha= " ++ pprint rho
-      if List.null alphas
-        then fail "impossible: cannot recurse with 0 arguments"
-        else do
-          argss <-
-            fanout
-              <$> traverse
-                ( \(arg_i, alpha) -> do
-                    gets args_rec_ctx
-                      >>= ( \case
-                              Just rec_ctx -> genAtomsFromCtx 3 rec_ctx alpha -- gen only vars from ctx
-                              Nothing -> genAtomsFromCtx 3 ctx alpha
-                          )
-                        . Map.lookup arg_i -- gen any neutral
-                )
-                (zip [0 .. length alphas] alphas)
-          -- debugSplice $! "genRecursions.argss: " ++ pprint (foldl AppE r <$> argss)
-          pure $ foldl AppE r <$> argss
-        -- else pure []
+      if canFlatten then do
+        let (alphas, beta) = flattenType rho
+        if compareTypesPoly' beta goal then do
+          debugSplice $! "genRecursions DEBUG TYP: genNeutralsV2: alpha= " ++ pprint rho
+          if List.null alphas
+            then fail "impossible: cannot recurse with 0 arguments"
+            else do
+              argss <-
+                fanout
+                  <$> traverse
+                    ( \(arg_i, alpha) -> do
+                        gets args_rec_ctx
+                          >>= ( \case
+                                  Just rec_ctx -> genAtomsFromCtx 3 rec_ctx alpha -- gen only vars from ctx
+                                  Nothing -> genNeutralsV3 alpha False (gas - 1)
+                              )
+                            . Map.lookup arg_i -- gen any neutral
+                    )
+                    (zip [0 .. length alphas] alphas)
+              -- debugSplice $! "genRecursions.argss: " ++ pprint (foldl AppE r <$> argss)
+              pure $ foldl AppE r <$> argss
+          -- else pure []
+        else pure []
+      else genAtomsFromCtx 3 ctx goal
     False -> pure []
 
 canRecurse :: Splice Bool
@@ -371,8 +340,8 @@ compareTypesPoly' t1 t2 = case (t1, t2) of
   (a, VarT b) | a /= ConT ''Proof && not (a `contains'` VarT b) -> True
   -- (VarT a, VarT b) -> True
   -- (VarT a, ConT b) | b /= ''Proof -> True
-  (AppT (AppT ArrowT a) b, AppT (AppT ArrowT c) d) -> True
-    -- compareTypesPoly' a c && compareTypesPoly' b d
+  (AppT (AppT ArrowT a) b, AppT (AppT ArrowT c) d) 
+    | compareTypesPoly' a c && compareTypesPoly' b d -> True
   (AppT a1 b1, AppT a2 b2) -> compareTypesPoly' a1 a2 && compareTypesPoly' b1 b2
   -- AppT List \ int -> bool
   _ -> False

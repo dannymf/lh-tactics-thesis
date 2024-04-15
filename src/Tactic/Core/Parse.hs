@@ -21,6 +21,7 @@ import Tactic.Core.Syntax
 import Tactic.Core.Utility
 import qualified Text.Parsec as P
 import Prelude hiding (exp)
+import Data.Maybe (fromMaybe)
 
 type Parser a = P.ParsecT String () Q a
 
@@ -135,7 +136,7 @@ parseInstr' =
           parseSymbol "]"
           pure hints
         mb_depth <- P.optionMaybe . P.try $ parseInt
-        pure [Auto {hints = maybe defaultAutoHints id mb_hints, depth = maybe defaultAutoDepth id mb_depth}],
+        pure [Auto {hints = fromMaybe defaultAutoHints mb_hints, depth = fromMaybe defaultAutoDepth mb_depth}],
       -- Assert
       do
         parseSymbol "assert"

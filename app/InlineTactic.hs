@@ -38,24 +38,6 @@ inlineTactics options filePath = do
   str_file <- readFile filePath
   consoleIO $ "inlining tactic splices in file: " ++ filePath
   let ls_file = lines str_file
-
-  -- -- why the fuck does this hand when I set std_err to CreatePipe?? maybe try is by stack run or something??
-  -- mb_hdl_err <- do
-  --   -- _ <- do
-  --   (_, _, mb_hdl_err, ph_build) <-
-  --     createProcess $
-  --       (shell "stack build --ghc-options \"-ddump-splices -fplugin-opt=LiquidHaskell:--compile-spec\"")
-  --         { -- std_out = CreatePipe,
-  --           std_err = CreatePipe
-  --         }
-  --   -- waitForProcess ph_build -- ? causes hang if std_err = CreatePipe
-  --   return mb_hdl_err
-  -- str_err <- hGetContents (fromJust mb_hdl_err)
-
-  -- required when using `stack run`, since that builds first, but not necessary
-  -- now that its in a separate project
-  -- clean
-
   Just str_err_raw <- build $ defaultOptions_build {ddump_splices = True, capture_std_err = True}
   -- debugIO "===[ str_err_raw ]==="
   -- debugIO str_err_raw

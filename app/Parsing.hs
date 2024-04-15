@@ -93,7 +93,7 @@ dropLogHeader str = case splitAtSuffix "lh-tactics     > " str of
 
 cleanLogString :: String -> String
 cleanLogString =
-  (foldl (.) id)
+  foldl (.) id
     [ filter ('\b' /=),
       dropLogHeader
     ]

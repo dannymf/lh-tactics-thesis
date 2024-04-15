@@ -22,7 +22,7 @@ main = do
 
   args <- getArgs
   case args of
-    [] -> error $ "This command reqires arguments of the form <filePath>:<defName> <option*>"
+    [] -> error "This command reqires arguments of the form <filePath>:<defName> <option*>"
     (filePath_defName : strs_opts) -> do
       let options = parseOptions strs_opts
       case splitByChar ':' filePath_defName of
